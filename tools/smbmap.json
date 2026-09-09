@@ -1,0 +1,29 @@
+{
+  "binary": "smbmap",
+  "category": "network",
+  "description": "SMB share enumeration and exploitation",
+  "timeout": 120,
+  "command": [
+    "smbmap",
+    "-H",
+    {
+      "param": "target"
+    },
+    {
+      "param": "username",
+      "flag": "-u"
+    },
+    {
+      "param": "password",
+      "flag": "-p"
+    },
+    {
+      "param": "domain",
+      "flag": "-d"
+    },
+    {
+      "param": "additional_args"
+    }
+  ],
+  "name": "smbmap"
+}

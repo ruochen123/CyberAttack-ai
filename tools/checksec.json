@@ -1,0 +1,15 @@
+{
+  "binary": "checksec",
+  "category": "binary",
+  "description": "Check binary security protections",
+  "timeout": 30,
+  "command": [
+    "checksec",
+    {
+      "param": "binary",
+      "flag": "--file=",
+      "glue": ""
+    }
+  ],
+  "name": "checksec"
+}

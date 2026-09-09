@@ -1,0 +1,17 @@
+{
+  "binary": "objdump",
+  "category": "binary",
+  "description": "Display object file information",
+  "timeout": 60,
+  "command": [
+    "objdump",
+    "-d",
+    {
+      "param": "additional_args"
+    },
+    {
+      "param": "binary"
+    }
+  ],
+  "name": "objdump"
+}

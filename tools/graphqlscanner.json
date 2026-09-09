@@ -1,0 +1,18 @@
+{
+  "binary": "curl",
+  "category": "api",
+  "aliases": [
+    "graphql_scanner"
+  ],
+  "description": "GraphQL endpoint introspection scanner",
+  "timeout": 60,
+  "command": [
+    "curl",
+    "-s",
+    {
+      "param": "url",
+      "template": "{value}?query=%7B__typename%7D"
+    }
+  ],
+  "name": "graphqlscanner"
+}

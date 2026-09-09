@@ -1,0 +1,21 @@
+{
+  "binary": "wfuzz",
+  "category": "web",
+  "description": "Web application fuzzer",
+  "timeout": 300,
+  "command": [
+    "wfuzz",
+    "-w",
+    {
+      "param": "wordlist",
+      "default": "/usr/share/wordlists/dirb/common.txt"
+    },
+    {
+      "param": "url"
+    },
+    {
+      "param": "additional_args"
+    }
+  ],
+  "name": "wfuzz"
+}

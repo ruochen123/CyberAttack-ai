@@ -1,31 +1,38 @@
 #!/usr/bin/env python3
 """
-HexStrike AI MCP Client - Enhanced AI Agent Communication Interface
+HexStrike AI MCP v7.0 — Self-Contained Single-Process Security MCP Server
 
-Enhanced with AI-Powered Intelligence & Automation
 🚀 Bug Bounty | CTF | Red Team | Security Research
 
-RECENT ENHANCEMENTS (v6.0):
-✅ Complete color consistency with reddish hacker theme
-✅ Enhanced visual output with consistent styling
-✅ Improved error handling and recovery systems
-✅ FastMCP integration for seamless AI communication
-✅ 100+ security tools with intelligent parameter optimization
-✅ Advanced logging with colored output and emojis
+v7.0 CHANGES:
+✅ Single-process architecture — no Flask server required
+✅ Local subprocess execution — zero HTTP overhead
+✅ All 150+ security tools available directly via MCP
+✅ Integrated command builder, cache, and async job manager
 
-Architecture: MCP Client for AI agent communication with HexStrike server
-Framework: FastMCP integration for tool orchestration
+Architecture: FastMCP → subprocess (security tools)
 """
 
 import sys
 import os
 import argparse
 import logging
-from typing import Dict, Any, Optional
-import requests
+import subprocess
+import threading
+import hashlib
+import json
+import uuid
+import re
+import signal
+import shutil
 import time
 from datetime import datetime
+from typing import Dict, Any, Optional
+from concurrent.futures import ThreadPoolExecutor, Future
+from pathlib import Path
+from collections import OrderedDict
 
+import psutil
 from mcp.server.fastmcp import FastMCP
 
 class HexStrikeColors:
@@ -139,131 +146,1028 @@ for handler in logging.getLogger().handlers:
 
 logger = logging.getLogger(__name__)
 
-# Default configuration
-DEFAULT_HEXSTRIKE_SERVER = "http://127.0.0.1:8888"  # Default HexStrike server URL
-DEFAULT_REQUEST_TIMEOUT = 300  # 5 minutes default timeout for API requests
-MAX_RETRIES = 3  # Maximum number of retries for connection attempts
+# ============================================================================
+# CONFIGURATION
+# ============================================================================
+
+COMMAND_TIMEOUT = 300       # 5 minutes default
+CACHE_SIZE = 1000
+CACHE_TTL = 3600            # 1 hour
+DEFAULT_REQUEST_TIMEOUT = 300
+MAX_WORKERS = 8
+
+# ============================================================================
+# ANSI / OUTPUT SANITIZER
+# ============================================================================
+
+_ANSI_RE = re.compile(r'\x1b\[[0-9;]*[a-zA-Z]')
+
+def _sanitize_output(text: str) -> str:
+    """Strip ANSI escape codes from command output."""
+    if not text:
+        return text
+    return _ANSI_RE.sub('', text)
+
+# ============================================================================
+# CACHE
+# ============================================================================
+
+class HexStrikeCache:
+    """In-memory cache for command results."""
+
+    def __init__(self, max_size: int = CACHE_SIZE, ttl: int = CACHE_TTL):
+        self.cache: OrderedDict = OrderedDict()
+        self.max_size = max_size
+        self.ttl = ttl
+        self.stats = {"hits": 0, "misses": 0, "evictions": 0}
+
+    def _key(self, command: str, params: dict = None) -> str:
+        raw = f"{command}:{json.dumps(params or {}, sort_keys=True)}"
+        return hashlib.md5(raw.encode()).hexdigest()
+
+    def get(self, command: str, params: dict = None) -> Optional[Dict[str, Any]]:
+        k = self._key(command, params)
+        if k in self.cache:
+            ts, data = self.cache[k]
+            if time.time() - ts <= self.ttl:
+                self.cache.move_to_end(k)
+                self.stats["hits"] += 1
+                return data
+            del self.cache[k]
+        self.stats["misses"] += 1
+        return None
+
+    def set(self, command: str, params: dict, result: Dict[str, Any]):
+        k = self._key(command, params)
+        while len(self.cache) >= self.max_size:
+            self.cache.popitem(last=False)
+            self.stats["evictions"] += 1
+        self.cache[k] = (time.time(), result)
+
+    def clear(self):
+        self.cache.clear()
+
+    def get_stats(self) -> Dict[str, Any]:
+        total = self.stats["hits"] + self.stats["misses"]
+        return {
+            "size": len(self.cache),
+            "max_size": self.max_size,
+            "hit_rate": f"{(self.stats['hits'] / total * 100):.1f}%" if total else "0%",
+            "hits": self.stats["hits"],
+            "misses": self.stats["misses"],
+            "evictions": self.stats["evictions"],
+        }
+
+# ============================================================================
+# UNIVERSAL TOOL COMMAND BUILDER
+# ============================================================================
+
+# ============================================================================
+# TOOL REGISTRY — JSON-config-driven tool command builder
+# ============================================================================
+
+class ToolRegistry:
+    """Load tool command templates from JSON config files in tools/ directory.
+
+    Adding a new tool:
+      1. Create tools/<name>.json with the command template
+      2. Install the binary (brew install / apt install)
+      3. Write an @mcp.tool() function in this file
+
+    No Python code changes needed for the command builder.
+    """
+
+    def __init__(self, tools_dir: str = None):
+        if tools_dir is None:
+            tools_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "tools")
+        self._tools_dir = Path(tools_dir)
+        self._configs: Dict[str, dict] = {}
+        self._alias_map: Dict[str, str] = {}
+        self._load_all()
+
+    def _load_all(self):
+        if not self._tools_dir.is_dir():
+            logger.warning(f"⚠️  Tools directory not found: {self._tools_dir}")
+            return
+        for fpath in sorted(self._tools_dir.glob("*.json")):
+            try:
+                with open(fpath) as f:
+                    cfg = json.load(f)
+            except Exception as e:
+                logger.warning(f"⚠️  Failed to load {fpath.name}: {e}")
+                continue
+            name = cfg.get("name", fpath.stem)
+            self._configs[name] = cfg
+            for alias in cfg.get("aliases", []):
+                self._alias_map[self._norm(alias)] = name
+        logger.info(f"📋 ToolRegistry: {len(self._configs)} tool configs loaded from {self._tools_dir}")
+
+    @staticmethod
+    def _norm(s: str) -> str:
+        return s.lower().replace("-", "").replace("_", "")
+
+    def get(self, tool_name: str) -> Optional[dict]:
+        # 优先原始 name 精确匹配：_configs 的 key 是原始 name（如 "arp-scan"），
+        # 而 _norm 会去掉 -/_ 导致查不到，故先试原始 key 再走标准化逻辑
+        if tool_name in self._configs:
+            return self._configs[tool_name]
+        t = self._norm(tool_name)
+        if t in self._configs:
+            return self._configs[t]
+        if t in self._alias_map:
+            return self._configs[self._alias_map[t]]
+        # Fuzzy: check aliases in each config
+        for name, cfg in self._configs.items():
+            for alias in cfg.get("aliases", []):
+                if self._norm(alias) == t:
+                    return cfg
+        return None
+
+    def build_command(self, tool_name: str, params: dict) -> str:
+        """Build shell command from JSON template. Returns '' if not found or custom."""
+        cfg = self.get(tool_name)
+        if not cfg or cfg.get("custom"):
+            return ""
+        return self._render(cfg["command"], params, tool_name)
+
+    def _resolve_param(self, params: dict, item: dict) -> tuple:
+        """Resolve a param value from params dict. Returns (value, was_explicitly_set)."""
+        param = item.get("param", "")
+        alt = item.get("alt_param", "")
+
+        # Special: __tool_name → original tool_name (before normalization)
+        if param == "__tool_name":
+            return None, False  # handled in _render
+
+        val = params.get(param)
+        if val is not None:
+            return val, True
+        if alt:
+            val = params.get(alt)
+            if val is not None:
+                return val, True
+        return None, False
+
+    def _render(self, template: list, params: dict, tool_name: str) -> str:
+        parts = []
+        for item in template:
+            if isinstance(item, str):
+                parts.append(item)
+                continue
+            if not isinstance(item, dict):
+                continue
+
+            param = item.get("param", "")
+            flag = item.get("flag", "")
+            default = item.get("default")
+            fallback = item.get("fallback")
+            glue = item.get("glue", " ")
+            quote = item.get("quote", False)
+            literal = item.get("literal", False)
+            template_str = item.get("template", "")
+            default_from = item.get("default_from", "")
+
+            # Literal __tool_name → original tool_name
+            if literal and param == "__tool_name":
+                parts.append(tool_name)
+                continue
+
+            # Special: default_from
+            if default_from == "url_or_target":
+                url = params.get("url") or params.get("target") or ""
+                parts.append(f"curl -s {url}")
+                continue
+
+            # Resolve value
+            value, was_set = self._resolve_param(params, item)
+
+            # Not set at all → use fallback or default, or skip
+            if value is None and not was_set:
+                if fallback is not None:
+                    parts.append(str(fallback))
+                elif default is not None:
+                    if default is True and flag:
+                        parts.append(flag)
+                    else:
+                        parts.append(str(default))
+                continue
+
+            # Falsy value: skip (user explicitly provided None/empty/False)
+            if value is None or value is False or (isinstance(value, str) and value == ""):
+                continue
+
+            # Custom template: "{value}?query=..." etc
+            if template_str:
+                rendered = template_str.replace("{value}", str(value))
+                parts.append(rendered)
+                continue
+
+            # Boolean flag
+            if value is True:
+                parts.append(flag)
+                continue
+
+            # Normal value output
+            val_str = f"'{value}'" if quote else str(value)
+            if flag:
+                if glue:
+                    parts.append(f"{flag}{glue}{val_str}")
+                else:
+                    parts.append(f"{flag}{val_str}")
+            else:
+                parts.append(val_str)
+
+        return " ".join(p for p in parts if p)
+
+    def list_tools(self) -> list:
+        return sorted(self._configs.keys())
+
+    @property
+    def tool_count(self) -> int:
+        return len(self._configs)
+
+
+# Global registry instance
+_tool_registry = ToolRegistry()
+
+
+def build_tool_command(tool_name: str, params: dict) -> str:
+    """Build the shell command for any supported tool from its parameters.
+
+    Priority:
+      1. JSON config from tools/ directory (ToolRegistry)
+      2. Hardcoded handlers for complex tools (hydra, john, hashcat, sqlmap, ffuf, metasploit)
+      3. Generic web proxy fallback (zap, burpsuite, etc.)
+      4. Legacy: use 'command' field if present in params
+
+    Returns the full command string, or empty string if unsupported.
+    """
+    p = params
+
+    # ── Step 1: Try ToolRegistry (JSON configs) ──
+    cmd = _tool_registry.build_command(tool_name, p)
+    if cmd:
+        return cmd
+
+    # ── Step 2: Complex tools (custom logic) ──
+    t = tool_name.lower().replace("-", "")
+
+    if t == "hydra":
+        cmd = "hydra -t 4"
+        if p.get("username"):       cmd += f" -l {p['username']}"
+        elif p.get("username_file"): cmd += f" -L {p['username_file']}"
+        if p.get("password"):       cmd += f" -p {p['password']}"
+        elif p.get("password_file"): cmd += f" -P {p['password_file']}"
+        if p.get("additional_args"): cmd += f" {p['additional_args']}"
+        cmd += f" {p.get('target', '')} {p.get('service', '')}"
+        return cmd
+
+    if t == "john":
+        cmd = "john"
+        if p.get("format"):    cmd += f" --format={p['format']}"
+        if p.get("wordlist"):  cmd += f" --wordlist={p['wordlist']}"
+        if p.get("additional_args"): cmd += f" {p['additional_args']}"
+        cmd += f" {p.get('hash_file', p.get('hash', ''))}"
+        return cmd
+
+    if t == "hashcat":
+        cmd = f"hashcat -m {p.get('hash_type', '')} -a {p.get('attack_mode', '0')} {p.get('hash_file', '')}"
+        am = str(p.get("attack_mode", "0"))
+        if am == "0" and p.get("wordlist"):  cmd += f" {p['wordlist']}"
+        elif am == "3" and p.get("mask"):    cmd += f" {p['mask']}"
+        if p.get("additional_args"): cmd += f" {p['additional_args']}"
+        return cmd
+
+    if t == "sqlmap":
+        cmd = f"sqlmap -u {p.get('url', '')} --batch"
+        if p.get("data"):    cmd += f" --data='{p['data']}'"
+        if p.get("additional_args"): cmd += f" {p['additional_args']}"
+        return cmd
+
+    if t == "ffuf":
+        mode = p.get("mode", "directory")
+        wl = p.get("wordlist", "/usr/share/wordlists/dirb/common.txt")
+        url = p.get("url", "")
+        if mode == "directory":
+            cmd = f"ffuf -u {url}/FUZZ -w {wl}"
+        elif mode == "vhost":
+            cmd = f"ffuf -u {url} -H 'Host: FUZZ' -w {wl}"
+        elif mode == "parameter":
+            cmd = f"ffuf -u {url}?FUZZ=value -w {wl}"
+        else:
+            cmd = f"ffuf -u {url} -w {wl}"
+        cmd += f" -mc {p.get('match_codes', '200,204,301,302,307,401,403')}"
+        if p.get("additional_args"): cmd += f" {p['additional_args']}"
+        return cmd
+
+    if t == "metasploit":
+        module = p.get("module", "")
+        opts = p.get("options", {})
+        opt_str = " ".join(f"set {k} {v};" for k, v in opts.items())
+        cmd = f'msfconsole -q -x "use {module}; {opt_str} run; exit"'
+        return cmd
+
+    # ── Step 3: Generic web proxy (zap, burpsuite, browseragent, etc.) ──
+    if t in ("zap", "burpsuite", "burpsuitealternative", "browseragent",
+             "httpframework", "httpintruder", "httprepeater",
+             "httpsetrules", "httpsetscope"):
+        return p.get("command", f"curl -s {p.get('url', p.get('target', ''))}")
+
+    # ── Step 4: Legacy fallback — use 'command' field if present ──
+    return p.get("command", "")
+
+# ============================================================================
+# COMMAND EXECUTOR
+# ============================================================================
+
+class SimpleCommandExecutor:
+    """Execute a shell command via subprocess and return structured results."""
+
+    def __init__(self, command: str, timeout: int = COMMAND_TIMEOUT):
+        self.command = command
+        self.timeout = timeout
+
+    def execute(self) -> Dict[str, Any]:
+        start = time.time()
+        logger.info(f"⚡ Executing: {self.command[:120]}...")
+
+        try:
+            proc = subprocess.Popen(
+                self.command,
+                shell=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+            try:
+                stdout, stderr = proc.communicate(timeout=self.timeout)
+                return_code = proc.returncode
+                timed_out = False
+            except subprocess.TimeoutExpired:
+                proc.terminate()
+                try:
+                    stdout, stderr = proc.communicate(timeout=5)
+                except subprocess.TimeoutExpired:
+                    proc.kill()
+                    stdout, stderr = proc.communicate()
+                return_code = -1
+                timed_out = True
+
+            elapsed = time.time() - start
+            stdout = _sanitize_output(stdout or "")
+            stderr = _sanitize_output(stderr or "")
+            success = (return_code == 0) or (timed_out and (stdout or stderr))
+
+            return {
+                "stdout": stdout,
+                "stderr": stderr,
+                "return_code": return_code,
+                "success": success,
+                "timed_out": timed_out,
+                "execution_time": round(elapsed, 2),
+                "timestamp": datetime.now().isoformat(),
+            }
+        except Exception as exc:
+            elapsed = time.time() - start
+            return {
+                "stdout": "",
+                "stderr": str(exc),
+                "return_code": -1,
+                "success": False,
+                "timed_out": False,
+                "execution_time": round(elapsed, 2),
+                "timestamp": datetime.now().isoformat(),
+            }
+
+# ============================================================================
+# LOCAL EXECUTION ENGINE
+# ============================================================================
+
+class LocalExecutionEngine:
+    """Self-contained tool execution — no Flask server required."""
+
+    def __init__(self):
+        self.cache = HexStrikeCache()
+        self._executor = ThreadPoolExecutor(max_workers=MAX_WORKERS, thread_name_prefix="hexstrike-")
+        self._jobs: Dict[str, Dict[str, Any]] = {}
+        self._lock = threading.RLock()
+        self._start_time = time.time()
+        self._exec_count = 0
+        self._success_count = 0
+        self._fail_count = 0
+
+    # ---- Health ----
+    def health_check(self) -> Dict[str, Any]:
+        # 全量探测：从 ToolRegistry 读取所有已配置工具，逐个 which 检查 binary
+        # 不再硬编码工具列表，新增/移除 JSON 配置即自动纳入健康检查
+        tools_available = {}
+        # 直接遍历 _configs，绕开 get()：get() 内部 _norm 会把含 -/_ 的 name
+        # 标准化后与原始 key 不匹配（如 arp-scan、generic_web_proxy），导致漏检
+        for name, cfg in _tool_registry._configs.items():
+            binary = cfg.get("binary")
+            if not binary:
+                # 聚合类工具（如 generic_cloud，binary=null，运行时动态选）
+                continue
+            tools_available[name] = shutil.which(binary) is not None
+
+        available_count = sum(1 for v in tools_available.values() if v)
+
+        # 核心工具子集：缺失会影响主要扫描能力，单独标记
+        essential = ["nmap", "nuclei", "nikto", "sqlmap", "gobuster", "ffuf",
+                     "hydra", "john", "hashcat", "subfinder", "amass", "gdb",
+                     "radare2", "binwalk", "strings", "objdump"]
+        essential_ok = all(tools_available.get(t, False) for t in essential)
+
+        return {
+            "status": "healthy",
+            "version": "7.0.0-standalone",
+            "all_essential_tools_available": essential_ok,
+            "tools_status": tools_available,
+            "tools_available_count": available_count,
+            "tools_total_count": len(tools_available),
+            "total_tools_available": available_count,  # 兼容 server_health tool 引用
+            "uptime_seconds": int(time.time() - self._start_time),
+        }
+
+    # ---- Command execution ----
+    def execute_command(self, command: str, use_cache: bool = True) -> Dict[str, Any]:
+        if use_cache:
+            cached = self.cache.get(command, {})
+            if cached:
+                logger.debug(f"💾 Cache hit: {command[:60]}...")
+                return cached
+
+        executor = SimpleCommandExecutor(command)
+        result = executor.execute()
+
+        if use_cache and result.get("success"):
+            self.cache.set(command, {}, result)
+
+        self._exec_count += 1
+        if result.get("success"):
+            self._success_count += 1
+        else:
+            self._fail_count += 1
+
+        return result
+
+    # ---- Tool execution via build_tool_command ----
+    def run_tool(self, tool_name: str, params: dict) -> Dict[str, Any]:
+        """Build command from params, execute, return result."""
+        raw_cmd = params.pop("_raw_command", "") if isinstance(params, dict) else ""
+        if raw_cmd:
+            return self.execute_command(raw_cmd, use_cache=params.get("use_cache", True) if isinstance(params, dict) else True)
+
+        command = build_tool_command(tool_name, params)
+        if not command:
+            return {
+                "success": False,
+                "error": f"No command builder for tool '{tool_name}'. Pass a raw 'command' in params.",
+            }
+
+        use_cache = params.get("use_cache", True) if isinstance(params, dict) else True
+        return self.execute_command(command, use_cache=use_cache)
+
+    # ---- Async job execution (for long-running tools) ----
+    def submit_job(self, tool_name: str, params: dict) -> str:
+        """Submit a tool for background execution, return job_id immediately."""
+        job_id = str(uuid.uuid4())[:12]
+        now = time.time()
+
+        command = build_tool_command(tool_name, params)
+        if not command:
+            raise ValueError(f"Cannot build command for tool '{tool_name}'")
+
+        with self._lock:
+            self._jobs[job_id] = {
+                "job_id": job_id,
+                "status": "running",
+                "command": command[:120],
+                "tool_name": tool_name,
+                "result": None,
+                "error": None,
+                "created_at": now,
+                "completed_at": None,
+                "progress": 0.0,
+                "progress_label": "Starting...",
+            }
+
+        def _run():
+            try:
+                result = self.execute_command(command, use_cache=True)
+                with self._lock:
+                    self._jobs[job_id]["status"] = "completed"
+                    self._jobs[job_id]["result"] = result
+                    self._jobs[job_id]["completed_at"] = time.time()
+                    self._jobs[job_id]["progress"] = 1.0
+                    self._jobs[job_id]["progress_label"] = "Done"
+            except Exception as exc:
+                logger.error(f"Job {job_id} failed: {exc}")
+                with self._lock:
+                    self._jobs[job_id]["status"] = "failed"
+                    self._jobs[job_id]["error"] = str(exc)
+                    self._jobs[job_id]["completed_at"] = time.time()
+
+        self._executor.submit(_run)
+        logger.info(f"📨 Job {job_id} accepted: {command[:80]}...")
+        return job_id
+
+    def poll_job(self, job_id: str, max_wait: int = 300, interval: int = 2) -> Dict[str, Any]:
+        """Poll job status until completion or timeout."""
+        deadline = time.time() + max_wait
+        while time.time() < deadline:
+            with self._lock:
+                job = self._jobs.get(job_id)
+                if job is None:
+                    return {"status": "not_found", "job_id": job_id}
+                info = dict(job)
+
+            status = info["status"]
+            if status in ("completed", "failed"):
+                return info
+
+            time.sleep(interval)
+
+        raise RuntimeError(f"Job {job_id} timed out after {max_wait}s")
+
+    def run_tool_async(self, tool_name: str, params: dict) -> Dict[str, Any]:
+        """Submit tool for async execution and wait for result."""
+        params = params or {}
+        raw_cmd = params.pop("_raw_command", "") if isinstance(params, dict) else ""
+
+        if raw_cmd:
+            job_id = self._submit_raw_command(raw_cmd, params)
+        else:
+            job_id = self.submit_job(tool_name, params)
+
+        try:
+            job_info = self.poll_job(job_id)
+        except RuntimeError as e:
+            return {"success": False, "error": str(e), "job_id": job_id}
+
+        if job_info.get("status") == "failed":
+            return {
+                "success": False,
+                "error": job_info.get("error", "Job execution failed"),
+                "job_id": job_id,
+            }
+
+        result = job_info.get("result", {})
+        if not result:
+            return {
+                "success": False,
+                "error": "Job completed but returned no result",
+                "job_id": job_id,
+            }
+        return result
+
+    def _submit_raw_command(self, command: str, params: dict) -> str:
+        """Submit a raw command string for async execution."""
+        job_id = str(uuid.uuid4())[:12]
+        now = time.time()
+        with self._lock:
+            self._jobs[job_id] = {
+                "job_id": job_id,
+                "status": "running",
+                "command": command[:120],
+                "tool_name": "raw",
+                "result": None,
+                "error": None,
+                "created_at": now,
+                "completed_at": None,
+                "progress": 0.0,
+                "progress_label": "Starting...",
+            }
+
+        def _run():
+            try:
+                result = self.execute_command(command, use_cache=params.get("use_cache", True))
+                with self._lock:
+                    self._jobs[job_id]["status"] = "completed"
+                    self._jobs[job_id]["result"] = result
+                    self._jobs[job_id]["completed_at"] = time.time()
+                    self._jobs[job_id]["progress"] = 1.0
+            except Exception as exc:
+                with self._lock:
+                    self._jobs[job_id]["status"] = "failed"
+                    self._jobs[job_id]["error"] = str(exc)
+                    self._jobs[job_id]["completed_at"] = time.time()
+
+        self._executor.submit(_run)
+        return job_id
+
+    def list_jobs(self) -> list:
+        with self._lock:
+            return [
+                {
+                    "job_id": j["job_id"],
+                    "status": j["status"],
+                    "command": j.get("command", "")[:80],
+                    "tool_name": j.get("tool_name", ""),
+                    "created_at": j["created_at"],
+                }
+                for j in self._jobs.values()
+            ]
+
+    def cancel_job(self, job_id: str) -> bool:
+        with self._lock:
+            if job_id in self._jobs and self._jobs[job_id]["status"] == "running":
+                self._jobs[job_id]["status"] = "cancelled"
+                self._jobs[job_id]["completed_at"] = time.time()
+                return True
+        return False
+
+    # ---- Telemetry ----
+    def get_telemetry(self) -> Dict[str, Any]:
+        uptime = time.time() - self._start_time
+        success_rate = (self._success_count / self._exec_count * 100) if self._exec_count else 0
+        return {
+            "uptime_seconds": int(uptime),
+            "commands_executed": self._exec_count,
+            "successful_commands": self._success_count,
+            "failed_commands": self._fail_count,
+            "success_rate": f"{success_rate:.1f}%",
+            "system_metrics": {
+                "cpu_percent": psutil.cpu_percent(interval=0.1),
+                "memory_percent": psutil.virtual_memory().percent,
+                "disk_usage": psutil.disk_usage('/').percent,
+            },
+        }
+
+    def get_process_list(self) -> list:
+        return [
+            {
+                "pid": jid,
+                "command": j.get("command", "")[:80],
+                "status": j.get("status", "unknown"),
+                "created_at": j.get("created_at", 0),
+            }
+            for jid, j in self._jobs.items()
+        ]
+
+# ============================================================================
+# FILE OPERATIONS (local)
+# ============================================================================
+
+class LocalFileOperations:
+    """Handle file operations locally."""
+
+    def __init__(self, base_dir: str = "/tmp/hexstrike_files"):
+        self.base_dir = Path(base_dir)
+        self.base_dir.mkdir(parents=True, exist_ok=True)
+        self.max_file_size = 100 * 1024 * 1024  # 100MB
+
+    def create_file(self, filename: str, content: str, binary: bool = False) -> Dict[str, Any]:
+        try:
+            fp = self.base_dir / filename
+            fp.parent.mkdir(parents=True, exist_ok=True)
+            if len(content.encode()) > self.max_file_size:
+                return {"success": False, "error": f"File exceeds {self.max_file_size} bytes limit"}
+            mode = "wb" if binary else "w"
+            with open(fp, mode) as f:
+                f.write(content if not binary else (content.encode() if isinstance(content, str) else content))
+            return {"success": True, "path": str(fp), "size": len(content)}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    def modify_file(self, filename: str, content: str, append: bool = False) -> Dict[str, Any]:
+        try:
+            fp = self.base_dir / filename
+            if not fp.exists():
+                return {"success": False, "error": "File does not exist"}
+            with open(fp, "a" if append else "w") as f:
+                f.write(content)
+            return {"success": True, "path": str(fp)}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    def delete_file(self, filename: str) -> Dict[str, Any]:
+        try:
+            fp = self.base_dir / filename
+            if not fp.exists():
+                return {"success": False, "error": "File does not exist"}
+            if fp.is_dir():
+                shutil.rmtree(fp)
+            else:
+                fp.unlink()
+            return {"success": True}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    def list_files(self, directory: str = ".") -> Dict[str, Any]:
+        try:
+            dp = self.base_dir / directory
+            if not dp.exists():
+                return {"success": False, "error": "Directory does not exist", "files": []}
+            files = []
+            for item in dp.iterdir():
+                files.append({
+                    "name": item.name,
+                    "type": "directory" if item.is_dir() else "file",
+                    "size": item.stat().st_size if item.is_file() else 0,
+                    "modified": datetime.fromtimestamp(item.stat().st_mtime).isoformat(),
+                })
+            return {"success": True, "files": files}
+        except Exception as e:
+            return {"success": False, "error": str(e), "files": []}
+
+# ============================================================================
+# SELF-CONTAINED HEXSTRIKE CLIENT (replaces HTTP client)
+# ============================================================================
 
 class HexStrikeClient:
-    """Enhanced client for communicating with the HexStrike AI API Server"""
+    """Self-contained client — all tool execution happens locally via subprocess.
 
-    def __init__(self, server_url: str, timeout: int = DEFAULT_REQUEST_TIMEOUT):
-        """
-        Initialize the HexStrike AI Client
+    Same method signatures as the old HTTP client, so all @mcp.tool()
+    functions work without changes.
+    """
 
-        Args:
-            server_url: URL of the HexStrike AI API Server
-            timeout: Request timeout in seconds
-        """
-        self.server_url = server_url.rstrip("/")
+    SUBMIT_TIMEOUT = 10
+    POLL_INTERVAL = 2
+    POLL_TIMEOUT = 300
+
+    def __init__(self, server_url: str = None, timeout: int = DEFAULT_REQUEST_TIMEOUT):
         self.timeout = timeout
-        self.session = requests.Session()
+        self.engine = LocalExecutionEngine()
+        self.file_ops = LocalFileOperations()
+        self.server_url = server_url or "local://"
 
-        # Try to connect to server with retries
-        connected = False
-        for i in range(MAX_RETRIES):
-            try:
-                logger.info(f"🔗 Attempting to connect to HexStrike AI API at {server_url} (attempt {i+1}/{MAX_RETRIES})")
-                # First try a direct connection test before using the health endpoint
-                try:
-                    test_response = self.session.get(f"{self.server_url}/health", timeout=5)
-                    test_response.raise_for_status()
-                    health_check = test_response.json()
-                    connected = True
-                    logger.info(f"🎯 Successfully connected to HexStrike AI API Server at {server_url}")
-                    logger.info(f"🏥 Server health status: {health_check.get('status', 'unknown')}")
-                    logger.info(f"📊 Server version: {health_check.get('version', 'unknown')}")
-                    break
-                except requests.exceptions.ConnectionError:
-                    logger.warning(f"🔌 Connection refused to {server_url}. Make sure the HexStrike AI server is running.")
-                    time.sleep(2)  # Wait before retrying
-                except Exception as e:
-                    logger.warning(f"⚠️  Connection test failed: {str(e)}")
-                    time.sleep(2)  # Wait before retrying
-            except Exception as e:
-                logger.warning(f"❌ Connection attempt {i+1} failed: {str(e)}")
-                time.sleep(2)  # Wait before retrying
+        logger.info("⚡ HexStrike v7.0 — Self-contained mode (no Flask server)")
+        health = self.check_health()
+        available = sum(1 for v in health.get("tools_status", {}).values() if v)
+        total = len(health.get("tools_status", {}))
+        logger.info(f"🏥 Status: {health.get('status', 'unknown')} | Tools: {available}/{total} available")
 
-        if not connected:
-            error_msg = f"Failed to establish connection to HexStrike AI API Server at {server_url} after {MAX_RETRIES} attempts"
-            logger.error(error_msg)
-            # We'll continue anyway to allow the MCP server to start, but tools will likely fail
-
-    def safe_get(self, endpoint: str, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-        """
-        Perform a GET request with optional query parameters.
-
-        Args:
-            endpoint: API endpoint path (without leading slash)
-            params: Optional query parameters
-
-        Returns:
-            Response data as dictionary
-        """
-        if params is None:
-            params = {}
-
-        url = f"{self.server_url}/{endpoint}"
-
-        try:
-            logger.debug(f"📡 GET {url} with params: {params}")
-            response = self.session.get(url, params=params, timeout=self.timeout)
-            response.raise_for_status()
-            return response.json()
-        except requests.exceptions.RequestException as e:
-            logger.error(f"🚫 Request failed: {str(e)}")
-            return {"error": f"Request failed: {str(e)}", "success": False}
-        except Exception as e:
-            logger.error(f"💥 Unexpected error: {str(e)}")
-            return {"error": f"Unexpected error: {str(e)}", "success": False}
-
-    def safe_post(self, endpoint: str, json_data: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Perform a POST request with JSON data.
-
-        Args:
-            endpoint: API endpoint path (without leading slash)
-            json_data: JSON data to send
-
-        Returns:
-            Response data as dictionary
-        """
-        url = f"{self.server_url}/{endpoint}"
-
-        try:
-            logger.debug(f"📡 POST {url} with data: {json_data}")
-            response = self.session.post(url, json=json_data, timeout=self.timeout)
-            response.raise_for_status()
-            return response.json()
-        except requests.exceptions.RequestException as e:
-            logger.error(f"🚫 Request failed: {str(e)}")
-            return {"error": f"Request failed: {str(e)}", "success": False}
-        except Exception as e:
-            logger.error(f"💥 Unexpected error: {str(e)}")
-            return {"error": f"Unexpected error: {str(e)}", "success": False}
-
-    def execute_command(self, command: str, use_cache: bool = True) -> Dict[str, Any]:
-        """
-        Execute a generic command on the HexStrike server
-
-        Args:
-            command: Command to execute
-            use_cache: Whether to use caching for this command
-
-        Returns:
-            Command execution results
-        """
-        return self.safe_post("api/command", {"command": command, "use_cache": use_cache})
+    # === Public API (backward compatible) ===
 
     def check_health(self) -> Dict[str, Any]:
-        """
-        Check the health of the HexStrike AI API Server
+        return self.engine.health_check()
 
-        Returns:
-            Health status information
-        """
-        return self.safe_get("health")
+    def execute_command(self, command: str, use_cache: bool = True) -> Dict[str, Any]:
+        return self.engine.execute_command(command, use_cache=use_cache)
 
+    def execute_tool_async(self, tool_name: str, endpoint: str = "",
+                           data: Dict[str, Any] = None) -> Dict[str, Any]:
+        """Execute a security tool locally with async polling.
+
+        `endpoint` is kept for backward compat but ignored.
+        """
+        data = data or {}
+        raw_cmd = data.pop("_raw_command", "") if "_raw_command" in data else ""
+
+        if raw_cmd:
+            job_id = self.engine._submit_raw_command(raw_cmd, data)
+        else:
+            job_id = self.engine.submit_job(tool_name, data)
+
+        try:
+            job_info = self.engine.poll_job(job_id)
+        except RuntimeError as e:
+            return {"success": False, "error": str(e), "job_id": job_id}
+
+        if job_info.get("status") == "failed":
+            return {
+                "success": False,
+                "error": job_info.get("error", "Job execution failed"),
+                "job_id": job_id,
+            }
+
+        result = job_info.get("result", {})
+        if not result:
+            return {
+                "success": False,
+                "error": "Job completed but no result returned",
+                "job_id": job_id,
+            }
+        return result
+
+    def submit_job(self, command: str = "", tool_name: str = "",
+                   parameters: dict = None, use_cache: bool = True,
+                   use_recovery: bool = False,
+                   tool_params: dict = None) -> str:
+        """Submit async job (local, backward compat)."""
+        params = tool_params or parameters or {}
+        params["use_cache"] = use_cache
+        if command:
+            return self.engine._submit_raw_command(command, params)
+        return self.engine.submit_job(tool_name, params)
+
+    def poll_job(self, job_id: str, max_wait: int = None,
+                 interval: int = None) -> Dict[str, Any]:
+        return self.engine.poll_job(
+            job_id,
+            max_wait=max_wait or self.POLL_TIMEOUT,
+            interval=interval or self.POLL_INTERVAL,
+        )
+
+    def safe_post(self, endpoint: str, json_data: Dict[str, Any] = None) -> Dict[str, Any]:
+        """Route POST requests to local handlers (replaces HTTP POST)."""
+        data = json_data or {}
+
+        # --- Tool execution ---
+        if endpoint.startswith("api/tools/"):
+            tool_name = endpoint.split("/")[-1]
+            return self.engine.run_tool(tool_name, data)
+
+        # --- File operations ---
+        if endpoint == "api/files/create":
+            return self.file_ops.create_file(
+                data.get("filename", ""), data.get("content", ""),
+                data.get("binary", False))
+        if endpoint == "api/files/modify":
+            return self.file_ops.modify_file(
+                data.get("filename", ""), data.get("content", ""),
+                data.get("append", False))
+        if endpoint == "api/files/delete":
+            return self.file_ops.delete_file(data.get("filename", ""))
+
+        # --- Payload generation ---
+        if endpoint == "api/payloads/generate":
+            return self._generate_payload(data)
+
+        # --- Python ---
+        if endpoint == "api/python/install":
+            return self._install_package(data.get("package", ""))
+        if endpoint == "api/python/execute":
+            return self._execute_python(data.get("script", ""),
+                                        data.get("filename", ""))
+
+        # --- Raw command ---
+        if endpoint == "api/command":
+            return self.engine.execute_command(
+                data.get("command", ""),
+                use_cache=data.get("use_cache", True))
+
+        # --- Cache ---
+        if endpoint == "api/cache/clear":
+            self.engine.cache.clear()
+            return {"success": True, "message": "Cache cleared"}
+
+        # --- Process management ---
+        if endpoint.startswith("api/processes/"):
+            return self._handle_process(endpoint, data)
+
+        # --- AI / Intelligence / BugBounty / Visual / Error-handling stubs ---
+        if endpoint.startswith(("api/ai/", "api/vuln-intel/", "api/bugbounty/",
+                                "api/intelligence/", "api/visual/",
+                                "api/error-handling/")):
+            return self._workflow_stub(endpoint, data)
+
+        # --- HTTP framework tools ---
+        if endpoint.startswith("api/tools/http") or endpoint in (
+            "api/tools/burpsuite", "api/tools/burpsuite-alternative",
+            "api/tools/browser-agent", "api/tools/zap"):
+            return self._http_request(data)
+
+        # --- Fallback: extract tool name from endpoint ---
+        if "/" in endpoint:
+            tool_name = endpoint.split("/")[-1]
+            if tool_name:
+                return self.engine.run_tool(tool_name, data)
+
+        return {"success": False, "error": f"No local handler for: {endpoint}"}
+
+    def safe_get(self, endpoint: str, params: Dict[str, Any] = None) -> Dict[str, Any]:
+        """Route GET requests to local handlers."""
+        params = params or {}
+
+        if endpoint == "health":
+            return self.check_health()
+        if endpoint == "api/files/list":
+            return self.file_ops.list_files(params.get("directory", "."))
+        if endpoint == "api/cache/stats":
+            return self.engine.cache.get_stats()
+        if endpoint == "api/telemetry":
+            return self.engine.get_telemetry()
+        if endpoint == "api/processes/list":
+            return {"success": True, "processes": self.engine.get_process_list()}
+        if endpoint.startswith("api/processes/status/"):
+            pid = endpoint.split("/")[-1]
+            with self.engine._lock:
+                job = self.engine._jobs.get(pid)
+            if job:
+                return {"success": True, "status": job.get("status", "unknown")}
+            return {"success": False, "error": "Process not found"}
+        if endpoint == "api/processes/dashboard":
+            return {
+                "success": True,
+                "active_jobs": len([j for j in self.engine._jobs.values() if j["status"] == "running"]),
+                "telemetry": self.engine.get_telemetry(),
+            }
+        if endpoint == "api/error-handling/statistics":
+            return {"success": True, "recoveries": 0, "escalations": 0, "mode": "local"}
+
+        return {"success": False, "error": f"No local GET handler for: {endpoint}"}
+
+    # === Private helpers ===
+
+    def _generate_payload(self, data: dict) -> Dict[str, Any]:
+        ptype = data.get("type", "buffer")
+        size = int(data.get("size", 1024))
+        pattern = data.get("pattern", "A")
+        filename = data.get("filename", "")
+
+        if ptype == "buffer":
+            payload = pattern * (size // len(pattern)) + pattern[:size % len(pattern)]
+        elif ptype == "cyclic":
+            payload = "".join(chr(0x41 + (i % 26)) for i in range(size))
+        elif ptype == "random":
+            import random as _random
+            payload = "".join(chr(_random.randint(0x20, 0x7e)) for _ in range(size))
+        else:
+            payload = pattern * (size // len(pattern))
+
+        result = {"success": True, "payload": payload, "size": len(payload)}
+        if filename:
+            fp = Path("/tmp/hexstrike_files") / filename
+            fp.parent.mkdir(parents=True, exist_ok=True)
+            fp.write_text(payload)
+            result["file_path"] = str(fp)
+        return result
+
+    def _install_package(self, package: str) -> Dict[str, Any]:
+        try:
+            result = subprocess.run(
+                [sys.executable, "-m", "pip", "install", package],
+                capture_output=True, text=True, timeout=120)
+            return {
+                "success": result.returncode == 0,
+                "stdout": result.stdout,
+                "stderr": result.stderr,
+                "return_code": result.returncode,
+            }
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    def _execute_python(self, script: str, filename: str = "") -> Dict[str, Any]:
+        try:
+            if filename:
+                fp = Path("/tmp/hexstrike_files") / filename
+                fp.parent.mkdir(parents=True, exist_ok=True)
+                fp.write_text(script)
+                result = subprocess.run(
+                    [sys.executable, str(fp)],
+                    capture_output=True, text=True, timeout=60)
+            else:
+                result = subprocess.run(
+                    [sys.executable, "-c", script],
+                    capture_output=True, text=True, timeout=60)
+            return {
+                "success": result.returncode == 0,
+                "stdout": result.stdout,
+                "stderr": result.stderr,
+                "return_code": result.returncode,
+            }
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    def _handle_process(self, endpoint: str, data: dict) -> Dict[str, Any]:
+        parts = endpoint.split("/")
+        if len(parts) < 3:
+            return {"success": False, "error": "Invalid endpoint"}
+        action = parts[2]
+        pid = parts[3] if len(parts) > 3 else ""
+        if action == "terminate" and pid:
+            return {"success": True, "cancelled": self.engine.cancel_job(pid)}
+        if action in ("pause", "resume") and pid:
+            return {"success": True, "message": f"{action} not supported in local mode"}
+        return {"success": False, "error": f"Unknown action: {action}"}
+
+    def _workflow_stub(self, endpoint: str, data: dict) -> Dict[str, Any]:
+        """Return guidance for AI/Intelligence/BugBounty workflow endpoints."""
+        category = endpoint.split("/")[1] if "/" in endpoint else "unknown"
+        action = endpoint.split("/")[-1] if "/" in endpoint else endpoint
+        return {
+            "success": True,
+            "mode": "standalone-guidance",
+            "message": f"'{action}' workflow is now orchestrated directly by Claude Code via MCP tools.",
+            "hint": f"Use individual tools (nmap_scan, nuclei_scan, subfinder_scan, etc.) to build your {category} workflow.",
+            "suggested_tools": ["nmap_scan", "nuclei_scan", "nikto_scan", "subfinder_scan",
+                              "gobuster_scan", "sqlmap_scan", "amass_scan", "ffuf_scan"],
+            "original_params": data,
+        }
+
+    def _http_request(self, data: dict) -> Dict[str, Any]:
+        """Simple HTTP request for browser-agent, burpsuite, etc."""
+        url = data.get("url", data.get("target", ""))
+        method = data.get("method", "GET")
+        if not url:
+            return {"success": False, "error": "No URL provided"}
+        try:
+            import urllib.request as _ureq
+            body = data.get("body", "").encode() if data.get("body") else None
+            req = _ureq.Request(url, data=body, method=method)
+            for k, v in data.get("headers", {}).items():
+                req.add_header(k, v)
+            resp = _ureq.urlopen(req, timeout=10)
+            return {
+                "success": True,
+                "status_code": resp.status,
+                "headers": dict(resp.headers),
+                "body": resp.read().decode(errors="replace")[:10000],
+            }
+        except Exception as e:
+            return {"success": False, "error": str(e), "url": url}
 def setup_mcp_server(hexstrike_client: HexStrikeClient) -> FastMCP:
     """
     Set up the MCP server with all enhanced tool functions
@@ -304,7 +1208,11 @@ def setup_mcp_server(hexstrike_client: HexStrikeClient) -> FastMCP:
 
         # Use enhanced error handling by default
         data["use_recovery"] = True
-        result = hexstrike_client.safe_post("api/tools/nmap", data)
+        try:
+            result = hexstrike_client.execute_tool_async("nmap", "api/tools/nmap", data)
+        except RuntimeError as e:
+            logger.error(f"{HexStrikeColors.ERROR}⏰ Nmap scan timed out for {target}: {e}{HexStrikeColors.RESET}")
+            return {"success": False, "error": str(e), "job_id": getattr(e, "job_id", "")}
 
         if result.get("success"):
             logger.info(f"{HexStrikeColors.SUCCESS}✅ Nmap scan completed successfully for {target}{HexStrikeColors.RESET}")
@@ -347,7 +1255,11 @@ def setup_mcp_server(hexstrike_client: HexStrikeClient) -> FastMCP:
 
         # Use enhanced error handling by default
         data["use_recovery"] = True
-        result = hexstrike_client.safe_post("api/tools/gobuster", data)
+        try:
+            result = hexstrike_client.execute_tool_async("gobuster", "api/tools/gobuster", data)
+        except RuntimeError as e:
+            logger.error(f"{HexStrikeColors.ERROR}⏰ Gobuster scan timed out for {url}: {e}{HexStrikeColors.RESET}")
+            return {"success": False, "error": str(e)}
 
         if result.get("success"):
             logger.info(f"{HexStrikeColors.SUCCESS}✅ Gobuster scan completed for {url}{HexStrikeColors.RESET}")
@@ -393,7 +1305,11 @@ def setup_mcp_server(hexstrike_client: HexStrikeClient) -> FastMCP:
 
         # Use enhanced error handling by default
         data["use_recovery"] = True
-        result = hexstrike_client.safe_post("api/tools/nuclei", data)
+        try:
+            result = hexstrike_client.execute_tool_async("nuclei", "api/tools/nuclei", data)
+        except RuntimeError as e:
+            logger.error(f"{HexStrikeColors.ERROR}⏰ Nuclei scan timed out for {target}: {e}{HexStrikeColors.RESET}")
+            return {"success": False, "error": str(e)}
 
         if result.get("success"):
             logger.info(f"{HexStrikeColors.SUCCESS}✅ Nuclei scan completed for {target}{HexStrikeColors.RESET}")
@@ -1016,7 +1932,11 @@ def setup_mcp_server(hexstrike_client: HexStrikeClient) -> FastMCP:
             "additional_args": additional_args
         }
         logger.info(f"📁 Starting Dirb scan: {url}")
-        result = hexstrike_client.safe_post("api/tools/dirb", data)
+        try:
+            result = hexstrike_client.execute_tool_async("dirb", "api/tools/dirb", data)
+        except RuntimeError as e:
+            logger.error(f"⏰ Dirb scan timed out: {e}")
+            return {"success": False, "error": str(e)}
         if result.get("success"):
             logger.info(f"✅ Dirb scan completed for {url}")
         else:
@@ -1040,7 +1960,11 @@ def setup_mcp_server(hexstrike_client: HexStrikeClient) -> FastMCP:
             "additional_args": additional_args
         }
         logger.info(f"🔬 Starting Nikto scan: {target}")
-        result = hexstrike_client.safe_post("api/tools/nikto", data)
+        try:
+            result = hexstrike_client.execute_tool_async("nikto", "api/tools/nikto", data)
+        except RuntimeError as e:
+            logger.error(f"⏰ Nikto scan timed out: {e}")
+            return {"success": False, "error": str(e)}
         if result.get("success"):
             logger.info(f"✅ Nikto scan completed for {target}")
         else:
@@ -1066,7 +1990,11 @@ def setup_mcp_server(hexstrike_client: HexStrikeClient) -> FastMCP:
             "additional_args": additional_args
         }
         logger.info(f"💉 Starting SQLMap scan: {url}")
-        result = hexstrike_client.safe_post("api/tools/sqlmap", data_payload)
+        try:
+            result = hexstrike_client.execute_tool_async("sqlmap", "api/tools/sqlmap", data_payload)
+        except RuntimeError as e:
+            logger.error(f"⏰ SQLMap scan timed out: {e}")
+            return {"success": False, "error": str(e)}
         if result.get("success"):
             logger.info(f"✅ SQLMap scan completed for {url}")
         else:
@@ -1132,7 +2060,11 @@ def setup_mcp_server(hexstrike_client: HexStrikeClient) -> FastMCP:
             "additional_args": additional_args
         }
         logger.info(f"🔑 Starting Hydra attack: {target}:{service}")
-        result = hexstrike_client.safe_post("api/tools/hydra", data)
+        try:
+            result = hexstrike_client.execute_tool_async("hydra", "api/tools/hydra", data)
+        except RuntimeError as e:
+            logger.error(f"⏰ Hydra attack timed out: {e}")
+            return {"success": False, "error": str(e)}
         if result.get("success"):
             logger.info(f"✅ Hydra attack completed for {target}")
         else:
@@ -1243,7 +2175,11 @@ def setup_mcp_server(hexstrike_client: HexStrikeClient) -> FastMCP:
             "additional_args": additional_args
         }
         logger.info(f"🔍 Starting FFuf {mode} fuzzing: {url}")
-        result = hexstrike_client.safe_post("api/tools/ffuf", data)
+        try:
+            result = hexstrike_client.execute_tool_async("ffuf", "api/tools/ffuf", data)
+        except RuntimeError as e:
+            logger.error(f"⏰ FFuf fuzzing timed out: {e}")
+            return {"success": False, "error": str(e)}
         if result.get("success"):
             logger.info(f"✅ FFuf fuzzing completed for {url}")
         else:
@@ -5415,50 +6351,43 @@ def setup_mcp_server(hexstrike_client: HexStrikeClient) -> FastMCP:
 
 def parse_args():
     """Parse command line arguments."""
-    parser = argparse.ArgumentParser(description="Run the HexStrike AI MCP Client")
-    parser.add_argument("--server", type=str, default=DEFAULT_HEXSTRIKE_SERVER,
-                      help=f"HexStrike AI API server URL (default: {DEFAULT_HEXSTRIKE_SERVER})")
+    parser = argparse.ArgumentParser(description="HexStrike AI MCP v7.0 — Self-Contained Security MCP Server")
+    parser.add_argument("--server", type=str, default=None,
+                      help="(Optional) HexStrike server URL for backward compat — ignored in v7.0")
     parser.add_argument("--timeout", type=int, default=DEFAULT_REQUEST_TIMEOUT,
-                      help=f"Request timeout in seconds (default: {DEFAULT_REQUEST_TIMEOUT})")
+                      help=f"Command timeout in seconds (default: {DEFAULT_REQUEST_TIMEOUT})")
     parser.add_argument("--debug", action="store_true", help="Enable debug logging")
     return parser.parse_args()
 
 def main():
-    """Main entry point for the MCP server."""
+    """Main entry point for the self-contained MCP server."""
     args = parse_args()
 
-    # Configure logging based on debug flag
     if args.debug:
         logger.setLevel(logging.DEBUG)
         logger.debug("🔍 Debug logging enabled")
 
-    # MCP compatibility: No banner output to avoid JSON parsing issues
-    logger.info(f"🚀 Starting HexStrike AI MCP Client v6.0")
-    logger.info(f"🔗 Connecting to: {args.server}")
+    logger.info("🚀 Starting HexStrike AI MCP v7.0 — Self-Contained Mode")
+    logger.info("⚡ No Flask server required — all tools execute locally via subprocess")
 
     try:
-        # Initialize the HexStrike AI client
-        hexstrike_client = HexStrikeClient(args.server, args.timeout)
+        # Initialize self-contained client (no HTTP, no external server)
+        hexstrike_client = HexStrikeClient(timeout=args.timeout)
 
-        # Check server health and log the result
+        # Log available tools
         health = hexstrike_client.check_health()
-        if "error" in health:
-            logger.warning(f"⚠️  Unable to connect to HexStrike AI API server at {args.server}: {health['error']}")
-            logger.warning("🚀 MCP server will start, but tool execution may fail")
-        else:
-            logger.info(f"🎯 Successfully connected to HexStrike AI API server at {args.server}")
-            logger.info(f"🏥 Server health status: {health['status']}")
-            logger.info(f"📊 Version: {health.get('version', 'unknown')}")
-            if not health.get("all_essential_tools_available", False):
-                logger.warning("⚠️  Not all essential tools are available on the HexStrike server")
-                missing_tools = [tool for tool, available in health.get("tools_status", {}).items() if not available]
-                if missing_tools:
-                    logger.warning(f"❌ Missing tools: {', '.join(missing_tools[:5])}{'...' if len(missing_tools) > 5 else ''}")
+        available = sum(1 for v in health.get("tools_status", {}).values() if v)
+        total = len(health.get("tools_status", {}))
+        logger.info(f"🛠️  Tools available: {available}/{total}")
+
+        missing = [t for t, v in health.get("tools_status", {}).items() if not v]
+        if missing:
+            logger.warning(f"⚠️  Missing tools ({len(missing)}): {', '.join(missing[:8])}"
+                          f"{'...' if len(missing) > 8 else ''}")
 
         # Set up and run the MCP server
         mcp = setup_mcp_server(hexstrike_client)
-        logger.info("🚀 Starting HexStrike AI MCP server")
-        logger.info("🤖 Ready to serve AI agents with enhanced cybersecurity capabilities")
+        logger.info("🤖 HexStrike MCP ready — 150+ security tools available")
         mcp.run()
     except Exception as e:
         logger.error(f"💥 Error starting MCP server: {str(e)}")

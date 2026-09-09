@@ -1,0 +1,8 @@
+{
+  "binary": "msfconsole",
+  "category": "exploitation",
+  "description": "Metasploit Framework exploitation",
+  "timeout": 600,
+  "custom": true,
+  "name": "metasploit"
+}

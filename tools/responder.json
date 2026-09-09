@@ -1,0 +1,19 @@
+{
+  "binary": "responder",
+  "category": "network",
+  "description": "LLMNR, NBT-NS and MDNS poisoner",
+  "timeout": 300,
+  "command": [
+    "responder",
+    "-I",
+    {
+      "param": "interface",
+      "default": "eth0"
+    },
+    {
+      "param": "additional_args",
+      "default": "-wrf"
+    }
+  ],
+  "name": "responder"
+}

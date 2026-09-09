@@ -1,0 +1,8 @@
+{
+  "binary": "john",
+  "category": "password",
+  "description": "Offline password cracker",
+  "timeout": 600,
+  "custom": true,
+  "name": "john"
+}

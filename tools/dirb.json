@@ -1,0 +1,21 @@
+{
+  "binary": "dirb",
+  "category": "web",
+  "description": "Web content scanner with recursive scanning",
+  "timeout": 300,
+  "command": [
+    "dirb",
+    {
+      "param": "url",
+      "alt_param": "target"
+    },
+    {
+      "param": "wordlist",
+      "default": "/usr/share/wordlists/dirb/common.txt"
+    },
+    {
+      "param": "additional_args"
+    }
+  ],
+  "name": "dirb"
+}

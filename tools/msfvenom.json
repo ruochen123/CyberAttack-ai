@@ -1,0 +1,37 @@
+{
+  "binary": "msfvenom",
+  "category": "exploitation",
+  "description": "Payload generator and encoder",
+  "timeout": 120,
+  "command": [
+    "msfvenom",
+    "-p",
+    {
+      "param": "payload",
+      "default": "linux/x86/meterpreter/reverse_tcp"
+    },
+    {
+      "param": "lhost",
+      "flag": "LHOST=",
+      "glue": ""
+    },
+    {
+      "param": "lport",
+      "flag": "LPORT=",
+      "glue": "",
+      "default": "4444"
+    },
+    {
+      "param": "format",
+      "flag": "-f"
+    },
+    {
+      "param": "output",
+      "flag": "-o"
+    },
+    {
+      "param": "additional_args"
+    }
+  ],
+  "name": "msfvenom"
+}

@@ -1,0 +1,17 @@
+{
+  "binary": "arjun",
+  "category": "web",
+  "description": "HTTP parameter discovery suite",
+  "timeout": 120,
+  "command": [
+    "arjun",
+    "-u",
+    {
+      "param": "url"
+    },
+    {
+      "param": "additional_args"
+    }
+  ],
+  "name": "arjun"
+}

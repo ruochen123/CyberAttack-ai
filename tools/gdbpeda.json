@@ -1,0 +1,22 @@
+{
+  "binary": "gdb",
+  "category": "binary",
+  "description": "GDB with PEDA exploit development assistant",
+  "timeout": 300,
+  "command": [
+    "gdb",
+    "-q",
+    "-ex",
+    "source /opt/peda/peda.py",
+    "-ex",
+    {
+      "param": "command",
+      "default": "run",
+      "quote": true
+    },
+    {
+      "param": "binary"
+    }
+  ],
+  "name": "gdbpeda"
+}

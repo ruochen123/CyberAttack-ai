@@ -1,0 +1,16 @@
+{
+  "binary": "autorecon",
+  "category": "network",
+  "description": "Multi-threaded network reconnaissance tool",
+  "timeout": 600,
+  "command": [
+    "autorecon",
+    {
+      "param": "target"
+    },
+    {
+      "param": "additional_args"
+    }
+  ],
+  "name": "autorecon"
+}

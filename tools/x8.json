@@ -1,0 +1,19 @@
+{
+  "binary": "x8",
+  "category": "web",
+  "description": "Hidden parameter discovery tool",
+  "timeout": 120,
+  "command": [
+    "x8",
+    "-u",
+    {
+      "param": "url"
+    },
+    "-w",
+    {
+      "param": "wordlist",
+      "default": "/usr/share/wordlists/dirb/common.txt"
+    }
+  ],
+  "name": "x8"
+}

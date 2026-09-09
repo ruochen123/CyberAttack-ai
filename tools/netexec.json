@@ -1,0 +1,36 @@
+{
+  "binary": "nxc",
+  "category": "network",
+  "description": "Network service exploitation framework (formerly CrackMapExec)",
+  "timeout": 300,
+  "command": [
+    "nxc",
+    {
+      "param": "protocol",
+      "default": "smb"
+    },
+    {
+      "param": "target"
+    },
+    {
+      "param": "username",
+      "flag": "-u"
+    },
+    {
+      "param": "password",
+      "flag": "-p"
+    },
+    {
+      "param": "hash",
+      "flag": "-H"
+    },
+    {
+      "param": "module",
+      "flag": "-M"
+    },
+    {
+      "param": "additional_args"
+    }
+  ],
+  "name": "netexec"
+}

@@ -1,0 +1,8 @@
+{
+  "binary": "hashcat",
+  "category": "password",
+  "description": "GPU-accelerated password recovery",
+  "timeout": 600,
+  "custom": true,
+  "name": "hashcat"
+}

@@ -28,6 +28,7 @@ import traceback
 import threading
 import time
 import hashlib
+import uuid
 import pickle
 import base64
 import queue
@@ -9018,7 +9019,439 @@ class FileOperationsManager:
 # Global file operations manager
 file_manager = FileOperationsManager()
 
-# API Routes
+# ============================================================================
+# UNIVERSAL TOOL COMMAND BUILDER
+# ============================================================================
+
+def build_tool_command(tool_name: str, params: dict) -> str:
+    """Build the shell command for any supported tool from its parameters.
+
+    Mirrors the command-construction logic in each @app.route handler.
+    Returns the full command string, or an empty string if unsupported.
+    """
+    t = tool_name.lower()
+    p = params
+
+    # --- Port scanners ---
+    if t == "nmap":
+        cmd = f"nmap {p.get('scan_type', '-sV')}"
+        if p.get("ports"):          cmd += f" -p {p['ports']}"
+        if p.get("additional_args"): cmd += f" {p['additional_args']}" if p.get("additional_args") else " -T4 -Pn"
+        else:                       cmd += " -T4 -Pn"
+        cmd += f" {p['target']}"
+        return cmd
+
+    if t == "rustscan":
+        cmd = f"rustscan -a {p['target']} --ulimit {p.get('ulimit', 5000)} -b {p.get('batch_size', 4500)} -t {p.get('timeout', 1500)}"
+        if p.get("ports"): cmd += f" -p {p['ports']}"
+        if p.get("scripts"): cmd += " -- -sC -sV"
+        if p.get("additional_args"): cmd += f" {p['additional_args']}"
+        return cmd
+
+    if t == "masscan":
+        cmd = f"masscan {p['target']} -p {p.get('ports', '1-65535')} --rate={p.get('rate', 1000)}"
+        if p.get("interface"): cmd += f" -e {p['interface']}"
+        if p.get("router_mac"): cmd += f" --router-mac {p['router_mac']}"
+        if p.get("additional_args"): cmd += f" {p['additional_args']}"
+        return cmd
+
+    # --- Web scanners / fuzzers ---
+    if t == "gobuster":
+        cmd = f"gobuster {p.get('mode', 'dir')} -u {p['url']} -w {p.get('wordlist', '/usr/share/wordlists/dirb/common.txt')}"
+        if p.get("additional_args"): cmd += f" {p['additional_args']}"
+        return cmd
+
+    if t == "nuclei":
+        cmd = f"nuclei -u {p['target']}"
+        if p.get("severity"): cmd += f" -severity {p['severity']}"
+        if p.get("tags"):     cmd += f" -tags {p['tags']}"
+        if p.get("template"): cmd += f" -t {p['template']}"
+        if p.get("additional_args"): cmd += f" {p['additional_args']}"
+        return cmd
+
+    if t == "nikto":
+        cmd = f"nikto -h {p['target']}"
+        if p.get("additional_args"): cmd += f" {p['additional_args']}"
+        return cmd
+
+    if t == "sqlmap":
+        cmd = f"sqlmap -u {p['url']} --batch"
+        if p.get("data"):    cmd += f" --data='{p['data']}'"
+        if p.get("additional_args"): cmd += f" {p['additional_args']}"
+        return cmd
+
+    if t == "dirb":
+        cmd = f"dirb {p.get('url', p.get('target', ''))} {p.get('wordlist', '/usr/share/wordlists/dirb/common.txt')}"
+        if p.get("additional_args"): cmd += f" {p['additional_args']}"
+        return cmd
+
+    if t == "ffuf":
+        mode = p.get("mode", "directory")
+        wl = p.get("wordlist", "/usr/share/wordlists/dirb/common.txt")
+        url = p.get("url", "")
+        if mode == "directory":
+            cmd = f"ffuf -u {url}/FUZZ -w {wl}"
+        elif mode == "vhost":
+            cmd = f"ffuf -u {url} -H 'Host: FUZZ' -w {wl}"
+        elif mode == "parameter":
+            cmd = f"ffuf -u {url}?FUZZ=value -w {wl}"
+        else:
+            cmd = f"ffuf -u {url} -w {wl}"
+        cmd += f" -mc {p.get('match_codes', '200,204,301,302,307,401,403')}"
+        if p.get("additional_args"): cmd += f" {p['additional_args']}"
+        return cmd
+
+    if t == "feroxbuster":
+        cmd = f"feroxbuster -u {p['url']}"
+        if p.get("additional_args"): cmd += f" {p['additional_args']}"
+        return cmd
+
+    if t == "wpscan":
+        cmd = f"wpscan --url {p.get('url', p.get('target', ''))}"
+        if p.get("additional_args"): cmd += f" {p['additional_args']}"
+        return cmd
+
+    # --- Password / hash cracking ---
+    if t == "hydra":
+        cmd = "hydra -t 4"
+        if p.get("username"):      cmd += f" -l {p['username']}"
+        elif p.get("username_file"): cmd += f" -L {p['username_file']}"
+        if p.get("password"):      cmd += f" -p {p['password']}"
+        elif p.get("password_file"): cmd += f" -P {p['password_file']}"
+        if p.get("additional_args"): cmd += f" {p['additional_args']}"
+        cmd += f" {p.get('target', '')} {p.get('service', '')}"
+        return cmd
+
+    if t == "john":
+        cmd = "john"
+        if p.get("format"):    cmd += f" --format={p['format']}"
+        if p.get("wordlist"):  cmd += f" --wordlist={p['wordlist']}"
+        if p.get("additional_args"): cmd += f" {p['additional_args']}"
+        cmd += f" {p.get('hash_file', p.get('hash', ''))}"
+        return cmd
+
+    if t == "hashcat":
+        cmd = f"hashcat -m {p.get('hash_type', '')} -a {p.get('attack_mode', '0')} {p.get('hash_file', '')}"
+        am = str(p.get("attack_mode", "0"))
+        if am == "0" and p.get("wordlist"):  cmd += f" {p['wordlist']}"
+        elif am == "3" and p.get("mask"):    cmd += f" {p['mask']}"
+        if p.get("additional_args"): cmd += f" {p['additional_args']}"
+        return cmd
+
+    # --- Domain / DNS enumeration ---
+    if t == "amass":
+        cmd = f"amass {p.get('mode', 'enum')} -d {p.get('domain', p.get('target', ''))}"
+        if p.get("additional_args"): cmd += f" {p['additional_args']}"
+        return cmd
+
+    if t == "subfinder":
+        cmd = f"subfinder -d {p.get('domain', p.get('target', ''))}"
+        if p.get("silent", True): cmd += " -silent"
+        if p.get("all_sources"):  cmd += " -all"
+        if p.get("additional_args"): cmd += f" {p['additional_args']}"
+        return cmd
+
+    if t in ("dnsenum", "fierce"):
+        cmd = f"{t} -d {p.get('domain', p.get('target', ''))}"
+        if p.get("additional_args"): cmd += f" {p['additional_args']}"
+        return cmd
+
+    # --- SMB / Network ---
+    if t == "enum4linux":
+        cmd = f"enum4linux {p.get('additional_args', '-a')} {p.get('target', '')}"
+        return cmd
+
+    if t == "netexec":
+        cmd = f"nxc {p.get('protocol', 'smb')} {p.get('target', '')}"
+        if p.get("username"): cmd += f" -u {p['username']}"
+        if p.get("password"): cmd += f" -p {p['password']}"
+        if p.get("hash"):    cmd += f" -H {p['hash']}"
+        if p.get("module"):  cmd += f" -M {p['module']}"
+        if p.get("additional_args"): cmd += f" {p['additional_args']}"
+        return cmd
+
+    if t == "smbmap":
+        cmd = f"smbmap -H {p.get('target', '')}"
+        if p.get("username"): cmd += f" -u {p['username']}"
+        if p.get("password"): cmd += f" -p {p['password']}"
+        if p.get("domain"):   cmd += f" -d {p['domain']}"
+        if p.get("additional_args"): cmd += f" {p['additional_args']}"
+        return cmd
+
+    # --- Metasploit ---
+    if t == "metasploit":
+        module = p.get("module", "")
+        opts = p.get("options", {})
+        opt_str = " ".join(f"set {k} {v};" for k, v in opts.items())
+        cmd = f'msfconsole -q -x "use {module}; {opt_str} run; exit"'
+        return cmd
+
+    # --- Cloud / infra scanners ---
+    if t in ("prowler", "trivy", "checkov", "terrascan", "kube-hunter",
+             "kube-bench", "docker-bench-security", "clair", "falco",
+             "scout-suite", "cloudmapper"):
+        command = p.get("command", "")
+        if not command:
+            # These tools often take just a command string
+            target = p.get("target", "")
+            extra = p.get("additional_args", "")
+            command = f"{t} {target} {extra}".strip()
+        return command
+
+    # --- Grab-based tools (httpx, httpx-probe, hakrawler, katana, etc.) ---
+    if t in ("httpx-probe",):
+        cmd = f"echo '{p.get('target', '')}' | httpx {p.get('additional_args', '-silent')}"
+        return cmd
+
+    if t in ("hakrawler",):
+        cmd = f"echo '{p.get('target', p.get('url', ''))}' | hakrawler {p.get('additional_args', '')}"
+        return cmd
+
+    if t in ("katana",):
+        cmd = f"katana -u {p.get('target', p.get('url', ''))}"
+        if p.get("additional_args"): cmd += f" {p['additional_args']}"
+        return cmd
+
+    # --- Generic fallback: use 'command' field if present ---
+    return p.get("command", "")
+
+# ============================================================================
+# ASYNC JOB MANAGER — Fixes MCP timeout by decoupling tool execution from HTTP
+# ============================================================================
+
+class AsyncJobManager:
+    """Manages async job submission and polling for long-running tool executions.
+
+    Instead of blocking the HTTP handler until a tool completes (causing MCP
+    bridge timeouts), the server accepts a job, starts it in a background
+    thread, and returns a job_id immediately.  The bridge polls GET /api/jobs/<id>
+    with short-lived requests until the result is ready.
+    """
+
+    # Regex to strip ANSI escape sequences
+    _ANSI_RE = None  # compiled lazily
+
+    @classmethod
+    def _sanitize_output(cls, text: str) -> str:
+        """Strip ANSI escape codes and other JSON-unfriendly control chars."""
+        if not text:
+            return text
+        if cls._ANSI_RE is None:
+            import re as _re
+            cls._ANSI_RE = _re.compile(r'\x1b\[[0-9;]*[a-zA-Z]')
+        return cls._ANSI_RE.sub('', text)
+
+    @classmethod
+    def _sanitize_result(cls, result: dict) -> dict:
+        """Clean stdout/stderr fields in a command result dict."""
+        if not isinstance(result, dict):
+            return result
+        for field in ("stdout", "stderr"):
+            if field in result and isinstance(result[field], str):
+                result[field] = cls._sanitize_output(result[field])
+        return result
+
+    def __init__(self, max_workers: int = 10):
+        self.jobs: Dict[str, Dict[str, Any]] = {}
+        self._lock = threading.RLock()
+        self._executor = ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="async-job-")
+        self._cleanup_thread = threading.Thread(target=self._cleanup_loop, daemon=True)
+        self._cleanup_thread.start()
+        logger.info(f"⚡ AsyncJobManager initialized with {max_workers} workers")
+
+    # ------------------------------------------------------------------
+    def submit(self, command: str = "", use_cache: bool = True,
+               tool_name: str = "", parameters: dict = None,
+               use_recovery: bool = False,
+               tool_params: dict = None) -> str:
+        """Submit a command for background execution, return job_id immediately.
+
+        Either `command` or `tool_name` + `tool_params` must be provided.
+        When `tool_name` + `tool_params` are given, the command is auto-built
+        by build_tool_command().
+        """
+        parameters = parameters or {}
+        tool_params = tool_params or {}
+
+        # Auto-build command from tool params if not provided
+        if not command and tool_name and tool_params:
+            command = build_tool_command(tool_name, tool_params)
+            if not command:
+                raise ValueError(f"Cannot build command for tool '{tool_name}' — "
+                                 f"pass a raw 'command' instead")
+            if not parameters:
+                parameters = tool_params
+
+        job_id = str(uuid.uuid4())[:12]
+        now = time.time()
+        with self._lock:
+            self.jobs[job_id] = {
+                "job_id": job_id,
+                "status": "running",
+                "command": command[:120],
+                "tool_name": tool_name,
+                "result": None,
+                "error": None,
+                "created_at": now,
+                "completed_at": None,
+                "progress": 0.0,
+                "progress_label": "Starting...",
+            }
+
+        def _run():
+            try:
+                if use_recovery and tool_name:
+                    result = execute_command_with_recovery(
+                        tool_name, command, parameters, use_cache=use_cache
+                    )
+                else:
+                    result = execute_command(command, use_cache=use_cache)
+                result = self._sanitize_result(result)
+                with self._lock:
+                    self.jobs[job_id]["status"] = "completed"
+                    self.jobs[job_id]["result"] = result
+                    self.jobs[job_id]["completed_at"] = time.time()
+                    self.jobs[job_id]["progress"] = 1.0
+                    self.jobs[job_id]["progress_label"] = "Done"
+            except Exception as exc:
+                logger.error(f"💥 Async job {job_id} failed: {exc}")
+                with self._lock:
+                    self.jobs[job_id]["status"] = "failed"
+                    self.jobs[job_id]["error"] = str(exc)
+                    self.jobs[job_id]["completed_at"] = time.time()
+
+        self._executor.submit(_run)
+        logger.info(f"📨 Job {job_id} accepted: {command[:80]}...")
+        return job_id
+
+    # ------------------------------------------------------------------
+    def get(self, job_id: str) -> Dict[str, Any]:
+        """Return job status dict or {'status': 'not_found'}."""
+        with self._lock:
+            job = self.jobs.get(job_id)
+            if job is None:
+                return {"status": "not_found", "job_id": job_id}
+            # Return a snapshot so callers can't mutate internals
+            return dict(job)
+
+    # ------------------------------------------------------------------
+    def list_jobs(self) -> list:
+        """Return lightweight list of all known jobs."""
+        with self._lock:
+            return [
+                {
+                    "job_id": j["job_id"],
+                    "status": j["status"],
+                    "command": j.get("command", "")[:80],
+                    "tool_name": j.get("tool_name", ""),
+                    "created_at": j["created_at"],
+                }
+                for j in self.jobs.values()
+            ]
+
+    # ------------------------------------------------------------------
+    def cancel(self, job_id: str) -> bool:
+        """Attempt to cancel a running job (best-effort)."""
+        with self._lock:
+            job = self.jobs.get(job_id)
+            if job and job["status"] == "running":
+                job["status"] = "cancelled"
+                job["completed_at"] = time.time()
+                return True
+            return False
+
+    # ------------------------------------------------------------------
+    def _cleanup_loop(self):
+        """Periodically remove completed/failed jobs older than 1 hour."""
+        while True:
+            time.sleep(300)
+            with self._lock:
+                now = time.time()
+                stale = [
+                    jid for jid, j in self.jobs.items()
+                    if j.get("completed_at") and (now - j["completed_at"] > 3600)
+                ]
+                for jid in stale:
+                    del self.jobs[jid]
+                if stale:
+                    logger.debug(f"🧹 Cleaned up {len(stale)} old async job(s)")
+
+
+# Singleton
+job_manager = AsyncJobManager(max_workers=8)
+
+
+# ============================================================================
+# ASYNC JOB API ROUTES
+# ============================================================================
+
+@app.route("/api/jobs", methods=["POST"])
+def submit_async_job():
+    """Submit a long-running tool command for background execution.
+
+    Two modes:
+      1. Raw command:  {"command": "nmap -sV ...", ...}
+      2. Auto-build:   {"tool_name": "nmap", "tool_params": {target, scan_type, ...}, ...}
+
+    Returns {job_id, status: "accepted"} immediately (HTTP 202).
+    The caller should poll GET /api/jobs/<job_id> for the final result.
+    """
+    try:
+        body = request.json or {}
+        command = body.get("command", "")
+        tool_name = body.get("tool_name", "")
+        tool_params = body.get("tool_params", {})
+
+        if not command and not (tool_name and tool_params):
+            return jsonify({"error": "Provide either 'command' or 'tool_name'+'tool_params'"}), 400
+
+        job_id = job_manager.submit(
+            command=command,
+            use_cache=body.get("use_cache", True),
+            tool_name=tool_name,
+            parameters=body.get("parameters"),
+            use_recovery=body.get("use_recovery", True),
+            tool_params=tool_params,
+        )
+        return jsonify({"job_id": job_id, "status": "accepted"}), 202
+    except Exception as exc:
+        logger.error(f"💥 Error submitting async job: {exc}")
+        return jsonify({"error": str(exc)}), 500
+
+
+@app.route("/api/jobs/<job_id>", methods=["GET"])
+def get_async_job(job_id: str):
+    """Poll for the status and (when complete) result of an async job.
+
+    Returns:
+      - status == "running"   → {job_id, status, progress, progress_label}
+      - status == "completed" → {job_id, status, result: {...}}
+      - status == "failed"    → {job_id, status, error}
+      - status == "not_found" → {job_id, status: "not_found"}
+    """
+    info = job_manager.get(job_id)
+    code = 200
+    if info.get("status") == "not_found":
+        code = 404
+    return jsonify(info), code
+
+
+@app.route("/api/jobs", methods=["GET"])
+def list_async_jobs():
+    """List all async jobs (lightweight, no result payloads)."""
+    return jsonify({"jobs": job_manager.list_jobs()})
+
+
+@app.route("/api/jobs/<job_id>/cancel", methods=["POST"])
+def cancel_async_job(job_id: str):
+    """Cancel a running async job (best-effort)."""
+    ok = job_manager.cancel(job_id)
+    return jsonify({"job_id": job_id, "cancelled": ok}), (200 if ok else 404)
+
+
+# ============================================================================
+# API Routes (synchronous — legacy, kept for backward compatibility)
+# ============================================================================
 
 @app.route("/health", methods=["GET"])
 def health_check():

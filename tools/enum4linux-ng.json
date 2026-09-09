@@ -1,0 +1,20 @@
+{
+  "binary": "enum4linux-ng",
+  "category": "network",
+  "description": "Advanced SMB enumeration with enhanced logging",
+  "aliases": [
+    "enum4linuxng"
+  ],
+  "timeout": 120,
+  "command": [
+    "enum4linux-ng",
+    {
+      "param": "additional_args",
+      "default": "-A"
+    },
+    {
+      "param": "target"
+    }
+  ],
+  "name": "enum4linux-ng"
+}

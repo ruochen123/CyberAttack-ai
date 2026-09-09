@@ -1,0 +1,19 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Logs
+*.log
+
+# macOS
+.DS_Store
+
+# Env
+.env
+.venv/
+venv/
+hexstrike-env/

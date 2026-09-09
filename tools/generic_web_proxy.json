@@ -1,0 +1,24 @@
+{
+  "binary": "curl",
+  "category": "web",
+  "aliases": [
+    "zap",
+    "burpsuite",
+    "burpsuitealternative",
+    "browseragent",
+    "httpframework",
+    "httpintruder",
+    "httprepeater",
+    "httpsetrules",
+    "httpsetscope"
+  ],
+  "description": "Generic HTTP proxy / browser automation fallback",
+  "timeout": 120,
+  "command": [
+    {
+      "param": "command",
+      "default_from": "url_or_target"
+    }
+  ],
+  "name": "generic_web_proxy"
+}

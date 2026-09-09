@@ -1,0 +1,40 @@
+{
+  "binary": "rustscan",
+  "category": "network",
+  "description": "Ultra-fast port scanner with intelligent rate limiting",
+  "timeout": 120,
+  "command": [
+    "rustscan",
+    "-a",
+    {
+      "param": "target"
+    },
+    "--ulimit",
+    {
+      "param": "ulimit",
+      "default": "5000"
+    },
+    "-b",
+    {
+      "param": "batch_size",
+      "default": "4500"
+    },
+    "-t",
+    {
+      "param": "timeout",
+      "default": "1500"
+    },
+    {
+      "param": "ports",
+      "flag": "-p"
+    },
+    {
+      "param": "scripts",
+      "flag": "-- -sC -sV"
+    },
+    {
+      "param": "additional_args"
+    }
+  ],
+  "name": "rustscan"
+}

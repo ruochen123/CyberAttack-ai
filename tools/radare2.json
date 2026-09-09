@@ -1,0 +1,22 @@
+{
+  "binary": "r2",
+  "category": "binary",
+  "description": "Reverse engineering framework",
+  "timeout": 300,
+  "command": [
+    "r2",
+    "-q",
+    "-c",
+    {
+      "param": "command",
+      "default": "aaa",
+      "quote": true
+    },
+    "-c",
+    "q",
+    {
+      "param": "binary"
+    }
+  ],
+  "name": "radare2"
+}

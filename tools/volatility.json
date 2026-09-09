@@ -1,0 +1,25 @@
+{
+  "binary": "volatility3",
+  "category": "forensics",
+  "aliases": [
+    "volatility3"
+  ],
+  "description": "Memory forensics framework",
+  "timeout": 300,
+  "command": [
+    {
+      "param": "__tool_name",
+      "literal": true
+    },
+    "-f",
+    {
+      "param": "image"
+    },
+    {
+      "param": "plugin",
+      "alt_param": "additional_args",
+      "default": "windows.info"
+    }
+  ],
+  "name": "volatility"
+}

@@ -1,0 +1,20 @@
+{
+  "binary": "hakrawler",
+  "category": "web",
+  "description": "Fast web endpoint discovery and crawling",
+  "timeout": 120,
+  "command": [
+    "echo",
+    {
+      "param": "url",
+      "alt_param": "target",
+      "quote": true
+    },
+    "|",
+    "hakrawler",
+    {
+      "param": "additional_args"
+    }
+  ],
+  "name": "hakrawler"
+}

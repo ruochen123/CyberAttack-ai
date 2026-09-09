@@ -1,0 +1,29 @@
+{
+  "binary": "hashpump",
+  "category": "crypto",
+  "description": "Hash length extension attack tool",
+  "timeout": 30,
+  "command": [
+    "hashpump",
+    "-s",
+    {
+      "param": "signature"
+    },
+    "-d",
+    {
+      "param": "data",
+      "quote": true
+    },
+    "-k",
+    {
+      "param": "key_length",
+      "default": "32"
+    },
+    "-a",
+    {
+      "param": "append",
+      "quote": true
+    }
+  ],
+  "name": "hashpump"
+}

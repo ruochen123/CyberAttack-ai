@@ -1,0 +1,16 @@
+{
+  "binary": "uro",
+  "category": "web",
+  "description": "Filter unique URLs from input list",
+  "timeout": 30,
+  "command": [
+    "cat",
+    {
+      "param": "input_file",
+      "default": "/dev/stdin"
+    },
+    "|",
+    "uro"
+  ],
+  "name": "uro"
+}

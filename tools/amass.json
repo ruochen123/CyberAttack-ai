@@ -1,0 +1,22 @@
+{
+  "binary": "amass",
+  "category": "network",
+  "description": "Advanced subdomain enumeration and OSINT gathering",
+  "timeout": 300,
+  "command": [
+    "amass",
+    {
+      "param": "mode",
+      "default": "enum"
+    },
+    "-d",
+    {
+      "param": "domain",
+      "alt_param": "target"
+    },
+    {
+      "param": "additional_args"
+    }
+  ],
+  "name": "amass"
+}

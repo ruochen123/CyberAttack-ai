@@ -1,0 +1,28 @@
+{
+  "binary": "curl",
+  "category": "api",
+  "aliases": [
+    "api_fuzzer",
+    "apifuzzer"
+  ],
+  "description": "API endpoint fuzzing via crafted requests",
+  "timeout": 60,
+  "command": [
+    "curl",
+    "-s",
+    "-X",
+    "POST",
+    {
+      "param": "url"
+    },
+    "-H",
+    "Content-Type: application/json",
+    "-d",
+    {
+      "param": "body",
+      "default": "{}",
+      "quote": true
+    }
+  ],
+  "name": "apifuzzer"
+}

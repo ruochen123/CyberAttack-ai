@@ -1,0 +1,21 @@
+{
+  "binary": "dirsearch",
+  "category": "web",
+  "description": "Advanced directory and file discovery",
+  "timeout": 300,
+  "command": [
+    "dirsearch",
+    "-u",
+    {
+      "param": "url"
+    },
+    {
+      "param": "wordlist",
+      "flag": "-w"
+    },
+    {
+      "param": "additional_args"
+    }
+  ],
+  "name": "dirsearch"
+}

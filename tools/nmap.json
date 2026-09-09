@@ -1,0 +1,28 @@
+{
+  "binary": "nmap",
+  "category": "network",
+  "description": "Advanced port scanning with NSE scripts and service detection",
+  "aliases": [
+    "nmapadvanced"
+  ],
+  "timeout": 300,
+  "command": [
+    "nmap",
+    {
+      "param": "scan_type",
+      "default": "-sV"
+    },
+    {
+      "param": "ports",
+      "flag": "-p"
+    },
+    {
+      "param": "additional_args",
+      "fallback": "-T4 -Pn"
+    },
+    {
+      "param": "target"
+    }
+  ],
+  "name": "nmap"
+}

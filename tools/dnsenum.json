@@ -1,0 +1,24 @@
+{
+  "binary": "dnsenum",
+  "category": "network",
+  "description": "DNS information gathering and subdomain brute forcing",
+  "aliases": [
+    "fierce"
+  ],
+  "timeout": 300,
+  "command": [
+    {
+      "param": "__tool_name",
+      "literal": true
+    },
+    "-d",
+    {
+      "param": "domain",
+      "alt_param": "target"
+    },
+    {
+      "param": "additional_args"
+    }
+  ],
+  "name": "dnsenum"
+}

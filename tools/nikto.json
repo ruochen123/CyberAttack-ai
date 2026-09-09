@@ -1,0 +1,18 @@
+{
+  "binary": "nikto",
+  "category": "web",
+  "description": "Web server vulnerability scanner",
+  "timeout": 600,
+  "command": [
+    "nikto",
+    "-h",
+    {
+      "param": "target",
+      "alt_param": "url"
+    },
+    {
+      "param": "additional_args"
+    }
+  ],
+  "name": "nikto"
+}

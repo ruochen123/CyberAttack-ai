@@ -1,0 +1,17 @@
+{
+  "binary": "enum4linux",
+  "category": "network",
+  "description": "SMB enumeration with user, group, and share discovery",
+  "timeout": 120,
+  "command": [
+    "enum4linux",
+    {
+      "param": "additional_args",
+      "default": "-a"
+    },
+    {
+      "param": "target"
+    }
+  ],
+  "name": "enum4linux"
+}

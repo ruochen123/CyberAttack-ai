@@ -1,0 +1,35 @@
+{
+  "binary": "masscan",
+  "category": "network",
+  "description": "High-speed Internet-scale port scanning",
+  "timeout": 300,
+  "command": [
+    "masscan",
+    {
+      "param": "target"
+    },
+    "-p",
+    {
+      "param": "ports",
+      "default": "1-65535"
+    },
+    {
+      "param": "rate",
+      "flag": "--rate=",
+      "default": "1000",
+      "glue": ""
+    },
+    {
+      "param": "interface",
+      "flag": "-e"
+    },
+    {
+      "param": "router_mac",
+      "flag": "--router-mac"
+    },
+    {
+      "param": "additional_args"
+    }
+  ],
+  "name": "masscan"
+}

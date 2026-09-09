@@ -1,0 +1,17 @@
+{
+  "binary": "feroxbuster",
+  "category": "web",
+  "description": "Recursive content discovery with intelligent filtering",
+  "timeout": 300,
+  "command": [
+    "feroxbuster",
+    "-u",
+    {
+      "param": "url"
+    },
+    {
+      "param": "additional_args"
+    }
+  ],
+  "name": "feroxbuster"
+}

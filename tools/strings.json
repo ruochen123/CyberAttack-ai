@@ -1,0 +1,18 @@
+{
+  "binary": "strings",
+  "category": "binary",
+  "description": "Extract printable strings from binary files",
+  "timeout": 60,
+  "command": [
+    "strings",
+    {
+      "param": "additional_args",
+      "default": "-n 4"
+    },
+    {
+      "param": "file",
+      "alt_param": "binary"
+    }
+  ],
+  "name": "strings"
+}

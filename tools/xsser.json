@@ -1,0 +1,18 @@
+{
+  "binary": "xsser",
+  "category": "web",
+  "description": "Cross-Site Scripting detection and exploitation",
+  "timeout": 300,
+  "command": [
+    "xsser",
+    "-u",
+    {
+      "param": "url",
+      "alt_param": "target"
+    },
+    {
+      "param": "additional_args"
+    }
+  ],
+  "name": "xsser"
+}

@@ -1,0 +1,8 @@
+{
+  "binary": "sqlmap",
+  "category": "web",
+  "description": "Automatic SQL injection and database takeover tool",
+  "timeout": 600,
+  "custom": true,
+  "name": "sqlmap"
+}

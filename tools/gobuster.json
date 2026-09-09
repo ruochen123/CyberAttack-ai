@@ -1,0 +1,26 @@
+{
+  "binary": "gobuster",
+  "category": "web",
+  "description": "Directory, file, and DNS enumeration",
+  "timeout": 300,
+  "command": [
+    "gobuster",
+    {
+      "param": "mode",
+      "default": "dir"
+    },
+    "-u",
+    {
+      "param": "url"
+    },
+    "-w",
+    {
+      "param": "wordlist",
+      "default": "/usr/share/wordlists/dirb/common.txt"
+    },
+    {
+      "param": "additional_args"
+    }
+  ],
+  "name": "gobuster"
+}

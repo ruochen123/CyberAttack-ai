@@ -1,0 +1,18 @@
+{
+  "binary": "katana",
+  "category": "web",
+  "description": "Next-generation web crawler with JS support",
+  "timeout": 300,
+  "command": [
+    "katana",
+    "-u",
+    {
+      "param": "url",
+      "alt_param": "target"
+    },
+    {
+      "param": "additional_args"
+    }
+  ],
+  "name": "katana"
+}

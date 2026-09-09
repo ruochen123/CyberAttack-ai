@@ -1,0 +1,18 @@
+{
+  "binary": "ropper",
+  "category": "binary",
+  "description": "ROP exploit builder",
+  "timeout": 60,
+  "command": [
+    "ropper",
+    "-f",
+    {
+      "param": "binary"
+    },
+    {
+      "param": "additional_args",
+      "default": "--all"
+    }
+  ],
+  "name": "ropper"
+}

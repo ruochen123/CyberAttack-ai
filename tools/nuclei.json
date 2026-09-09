@@ -1,0 +1,29 @@
+{
+  "binary": "nuclei",
+  "category": "web",
+  "description": "Fast vulnerability scanner based on templates",
+  "timeout": 600,
+  "command": [
+    "nuclei",
+    "-u",
+    {
+      "param": "target"
+    },
+    {
+      "param": "severity",
+      "flag": "-severity"
+    },
+    {
+      "param": "tags",
+      "flag": "-tags"
+    },
+    {
+      "param": "template",
+      "flag": "-t"
+    },
+    {
+      "param": "additional_args"
+    }
+  ],
+  "name": "nuclei"
+}

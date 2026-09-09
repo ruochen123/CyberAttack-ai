@@ -1,0 +1,26 @@
+{
+  "binary": "steghide",
+  "category": "forensics",
+  "description": "Steganography tool for hiding/extracting data",
+  "timeout": 60,
+  "command": [
+    "steghide",
+    {
+      "param": "action",
+      "default": "extract"
+    },
+    "-sf",
+    {
+      "param": "file"
+    },
+    "-p",
+    {
+      "param": "passphrase",
+      "quote": true
+    },
+    {
+      "param": "additional_args"
+    }
+  ],
+  "name": "steghide"
+}

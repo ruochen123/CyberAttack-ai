@@ -1,0 +1,22 @@
+{
+  "binary": "gdb",
+  "category": "binary",
+  "description": "GNU Debugger for binary analysis and exploitation",
+  "timeout": 300,
+  "command": [
+    "gdb",
+    "-q",
+    "-ex",
+    {
+      "param": "command",
+      "default": "run",
+      "quote": true
+    },
+    "-ex",
+    "quit",
+    {
+      "param": "binary"
+    }
+  ],
+  "name": "gdb"
+}

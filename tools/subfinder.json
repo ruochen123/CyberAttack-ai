@@ -1,0 +1,27 @@
+{
+  "binary": "subfinder",
+  "category": "network",
+  "description": "Fast passive subdomain discovery",
+  "timeout": 120,
+  "command": [
+    "subfinder",
+    "-d",
+    {
+      "param": "domain",
+      "alt_param": "target"
+    },
+    {
+      "param": "silent",
+      "flag": "-silent",
+      "default": true
+    },
+    {
+      "param": "all_sources",
+      "flag": "-all"
+    },
+    {
+      "param": "additional_args"
+    }
+  ],
+  "name": "subfinder"
+}

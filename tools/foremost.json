@@ -1,0 +1,22 @@
+{
+  "binary": "foremost",
+  "category": "forensics",
+  "description": "File carving and data recovery tool",
+  "timeout": 300,
+  "command": [
+    "foremost",
+    "-i",
+    {
+      "param": "file"
+    },
+    "-o",
+    {
+      "param": "output",
+      "default": "/tmp/foremost_out"
+    },
+    {
+      "param": "additional_args"
+    }
+  ],
+  "name": "foremost"
+}

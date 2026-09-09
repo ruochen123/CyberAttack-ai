@@ -1,0 +1,164 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 900">
+  <!-- Background -->
+  <rect width="1200" height="900" fill="#0f172a"/>
+
+  <!-- Decorative background elements -->
+  <circle cx="80" cy="80" r="3" fill="#1e293b"/>
+  <circle cx="180" cy="120" r="2" fill="#1e293b"/>
+  <circle cx="1120" cy="60" r="3" fill="#1e293b"/>
+  <circle cx="1050" cy="150" r="2" fill="#1e293b"/>
+  <circle cx="60" cy="780" r="2" fill="#1e293b"/>
+  <circle cx="1140" cy="820" r="3" fill="#1e293b"/>
+  <circle cx="150" cy="850" r="2" fill="#1e293b"/>
+
+  <!-- Title banner -->
+  <text x="600" y="18" text-anchor="middle" fill="#64748b" font-size="12" font-family="Noto Sans SC, sans-serif">HexStrike AI v7.0 — 调用流程与内部架构</text>
+
+  <!-- ===== LAYER 1: Claude Code ===== -->
+  <rect x="250" y="38" width="700" height="115" rx="14" fill="#1e1b4b" stroke="#6366f1" stroke-width="2"/>
+  <!-- Left accent bar -->
+  <path d="M250 52 a14 14 0 0 1 14 -14 l0 0 a0 0 0 0 0 0 0 l0 101 a14 14 0 0 1 -14 14 l0 0 a0 0 0 0 0 0 0 Z" fill="#818cf8"/>
+  <rect x="254" y="52" width="6" height="91" rx="3" fill="#818cf8"/>
+
+  <text x="600" y="78" text-anchor="middle" fill="#e0e7ff" font-size="28" font-weight="bold" font-family="Noto Sans SC, sans-serif">🧠 Claude Code</text>
+  <text x="600" y="108" text-anchor="middle" fill="#a5b4fc" font-size="15" font-family="Noto Sans SC, sans-serif">用户自然语言 → MCP 协议自动发现与调用</text>
+  <text x="600" y="132" text-anchor="middle" fill="#6366f1" font-size="12" font-family="Noto Sans SC, sans-serif">~/.mcp.json 配置  ·  新会话自动连接  ·  由 MCP Manager 管理生命周期</text>
+
+  <!-- Arrow 1: Claude → MCP Server -->
+  <g>
+    <polyline points="600,153 600,175 600,197" stroke="#475569" stroke-width="2" fill="none"/>
+    <polygon points="594,193 600,206 606,193" fill="#475569"/>
+  </g>
+  <!-- Arrow label -->
+  <rect x="515" y="165" width="170" height="24" rx="6" fill="#1e293b" stroke="#334155" stroke-width="1"/>
+  <text x="600" y="182" text-anchor="middle" fill="#94a3b8" font-size="12" font-family="Noto Sans SC, sans-serif">stdio JSON-RPC (MCP)</text>
+
+  <!-- ===== LAYER 2: hexstrike_mcp.py (Hero Section) ===== -->
+  <!-- Main container -->
+  <rect x="70" y="218" width="1060" height="420" rx="18" fill="#0c2d48" stroke="#0284c7" stroke-width="2"/>
+  <!-- Header background -->
+  <path d="M70 236 a18 18 0 0 1 18 -18 l1024 0 a18 18 0 0 1 18 18 l0 42 l-1060 0 Z" fill="#082f49"/>
+  <rect x="88" y="236" width="1024" height="24" fill="#082f49"/>
+
+  <!-- Server header text -->
+  <text x="600" y="255" text-anchor="middle" fill="#38bdf8" font-size="22" font-weight="bold" font-family="Noto Sans SC, sans-serif">⚡ hexstrike_mcp.py — v7.0 单进程自包含 MCP Server</text>
+
+  <!-- Metrics row -->
+  <rect x="230" y="268" width="140" height="22" rx="5" fill="#0f3857"/>
+  <text x="300" y="284" text-anchor="middle" fill="#7dd3fc" font-size="12" font-family="Noto Sans SC, sans-serif">6,481 行代码</text>
+
+  <rect x="390" y="268" width="160" height="22" rx="5" fill="#0f3857"/>
+  <text x="470" y="284" text-anchor="middle" fill="#7dd3fc" font-size="12" font-family="Noto Sans SC, sans-serif">151 @mcp.tool()</text>
+
+  <rect x="570" y="268" width="180" height="22" rx="5" fill="#0f3857"/>
+  <text x="660" y="284" text-anchor="middle" fill="#7dd3fc" font-size="12" font-family="Noto Sans SC, sans-serif">零 HTTP 开销</text>
+
+  <rect x="770" y="268" width="200" height="22" rx="5" fill="#0f3857"/>
+  <text x="870" y="284" text-anchor="middle" fill="#7dd3fc" font-size="12" font-family="Noto Sans SC, sans-serif">无需外部 Flask Server</text>
+
+  <!-- Internal modules: 3 columns x 2 rows -->
+  <!-- Row 1 -->
+  <!-- Module 1: build_tool_command -->
+  <rect x="95" y="308" width="320" height="110" rx="10" fill="#0f3857" stroke="#0369a1" stroke-width="1.5"/>
+  <rect x="99" y="312" width="28" height="28" rx="6" fill="#0e4a6e"/>
+  <text x="113" y="332" text-anchor="middle" fill="#38bdf8" font-size="16">🔧</text>
+  <text x="140" y="332" fill="#38bdf8" font-size="16" font-weight="bold" font-family="Noto Sans SC, sans-serif">build_tool_command()</text>
+  <text x="115" y="358" fill="#cbd5e1" font-size="13" font-family="Noto Sans SC, sans-serif">50+ 工具命令行自动拼接</text>
+  <text x="115" y="380" fill="#64748b" font-size="12" font-family="Noto Sans SC, sans-serif">nmap · nuclei · sqlmap · hydra · ffuf</text>
+  <text x="115" y="398" fill="#64748b" font-size="12" font-family="Noto Sans SC, sans-serif">john · hashcat · amass · gobuster · nikto</text>
+
+  <!-- Module 2: SimpleCommandExecutor -->
+  <rect x="440" y="308" width="320" height="110" rx="10" fill="#0f3857" stroke="#0369a1" stroke-width="1.5"/>
+  <rect x="444" y="312" width="28" height="28" rx="6" fill="#0e4a6e"/>
+  <text x="458" y="332" text-anchor="middle" fill="#38bdf8" font-size="16">⚙️</text>
+  <text x="485" y="332" fill="#38bdf8" font-size="16" font-weight="bold" font-family="Noto Sans SC, sans-serif">SimpleCommandExecutor</text>
+  <text x="460" y="358" fill="#cbd5e1" font-size="13" font-family="Noto Sans SC, sans-serif">subprocess.Popen 原生执行</text>
+  <text x="460" y="380" fill="#64748b" font-size="12" font-family="Noto Sans SC, sans-serif">超时控制 · 退出码检测</text>
+  <text x="460" y="398" fill="#64748b" font-size="12" font-family="Noto Sans SC, sans-serif">ANSI 转义码自动清理</text>
+
+  <!-- Module 3: HexStrikeCache -->
+  <rect x="785" y="308" width="320" height="110" rx="10" fill="#0f3857" stroke="#0369a1" stroke-width="1.5"/>
+  <rect x="789" y="312" width="28" height="28" rx="6" fill="#0e4a6e"/>
+  <text x="803" y="332" text-anchor="middle" fill="#38bdf8" font-size="16">💾</text>
+  <text x="830" y="332" fill="#38bdf8" font-size="16" font-weight="bold" font-family="Noto Sans SC, sans-serif">HexStrikeCache</text>
+  <text x="805" y="358" fill="#cbd5e1" font-size="13" font-family="Noto Sans SC, sans-serif">命令结果 LRU 缓存</text>
+  <text x="805" y="380" fill="#64748b" font-size="12" font-family="Noto Sans SC, sans-serif">MD5(command) → cached result</text>
+  <text x="805" y="398" fill="#64748b" font-size="12" font-family="Noto Sans SC, sans-serif">避免重复执行 · 加速响应</text>
+
+  <!-- Row 2 -->
+  <!-- Module 4: LocalExecutionEngine -->
+  <rect x="95" y="438" width="320" height="110" rx="10" fill="#0f3857" stroke="#0369a1" stroke-width="1.5"/>
+  <rect x="99" y="442" width="28" height="28" rx="6" fill="#0e4a6e"/>
+  <text x="113" y="462" text-anchor="middle" fill="#38bdf8" font-size="16">🚀</text>
+  <text x="140" y="462" fill="#38bdf8" font-size="16" font-weight="bold" font-family="Noto Sans SC, sans-serif">LocalExecutionEngine</text>
+  <text x="115" y="488" fill="#cbd5e1" font-size="13" font-family="Noto Sans SC, sans-serif">ThreadPoolExecutor 异步任务管理</text>
+  <text x="115" y="510" fill="#64748b" font-size="12" font-family="Noto Sans SC, sans-serif">UUID job_id  ·  轮询/取消</text>
+  <text x="115" y="528" fill="#64748b" font-size="12" font-family="Noto Sans SC, sans-serif">1h 过期任务自动清理</text>
+
+  <!-- Module 5: LocalFileOperations -->
+  <rect x="440" y="438" width="320" height="110" rx="10" fill="#0f3857" stroke="#0369a1" stroke-width="1.5"/>
+  <rect x="444" y="442" width="28" height="28" rx="6" fill="#0e4a6e"/>
+  <text x="458" y="462" text-anchor="middle" fill="#38bdf8" font-size="16">📁</text>
+  <text x="485" y="462" fill="#38bdf8" font-size="16" font-weight="bold" font-family="Noto Sans SC, sans-serif">LocalFileOperations</text>
+  <text x="460" y="488" fill="#cbd5e1" font-size="13" font-family="Noto Sans SC, sans-serif">文件 CRUD 操作</text>
+  <text x="460" y="510" fill="#64748b" font-size="12" font-family="Noto Sans SC, sans-serif">create / read / list / delete</text>
+  <text x="460" y="528" fill="#64748b" font-size="12" font-family="Noto Sans SC, sans-serif">/tmp/hexstrike_files/ 隔离目录</text>
+
+  <!-- Module 6: HexStrikeClient -->
+  <rect x="785" y="438" width="320" height="110" rx="10" fill="#0f3857" stroke="#0369a1" stroke-width="1.5"/>
+  <rect x="789" y="442" width="28" height="28" rx="6" fill="#0e4a6e"/>
+  <text x="803" y="462" text-anchor="middle" fill="#38bdf8" font-size="16">🔌</text>
+  <text x="830" y="462" fill="#38bdf8" font-size="16" font-weight="bold" font-family="Noto Sans SC, sans-serif">HexStrikeClient</text>
+  <text x="805" y="488" fill="#cbd5e1" font-size="13" font-family="Noto Sans SC, sans-serif">safe_post / safe_get 内部路由</text>
+  <text x="805" y="510" fill="#64748b" font-size="12" font-family="Noto Sans SC, sans-serif">151 工具签名向后兼容</text>
+  <text x="805" y="528" fill="#64748b" font-size="12" font-family="Noto Sans SC, sans-serif">AI/Intel/BugBounty → guidance stub</text>
+
+  <!-- Subtle inter-module connection lines -->
+  <line x1="415" y1="363" x2="440" y2="363" stroke="#0e4a6e" stroke-width="1"/>
+  <line x1="760" y1="363" x2="785" y2="363" stroke="#0e4a6e" stroke-width="1"/>
+  <line x1="415" y1="493" x2="440" y2="493" stroke="#0e4a6e" stroke-width="1"/>
+  <line x1="760" y1="493" x2="785" y2="493" stroke="#0e4a6e" stroke-width="1"/>
+
+  <!-- Arrow 2: MCP → Security Tools -->
+  <g>
+    <polyline points="600,638 600,662 600,686" stroke="#475569" stroke-width="2" fill="none"/>
+    <polygon points="594,682 600,695 606,682" fill="#475569"/>
+  </g>
+  <rect x="490" y="651" width="220" height="24" rx="6" fill="#1e293b" stroke="#334155" stroke-width="1"/>
+  <text x="600" y="668" text-anchor="middle" fill="#94a3b8" font-size="12" font-family="Noto Sans SC, sans-serif">subprocess.Popen (零 HTTP 开销)</text>
+
+  <!-- ===== LAYER 3: Security Tools ===== -->
+  <rect x="70" y="707" width="1060" height="170" rx="14" fill="#292008" stroke="#d97706" stroke-width="2"/>
+  <rect x="74" y="721" width="6" height="142" rx="3" fill="#f59e0b"/>
+
+  <text x="600" y="742" text-anchor="middle" fill="#fbbf24" font-size="22" font-weight="bold" font-family="Noto Sans SC, sans-serif">🛡️ 安全工具层 (150+)</text>
+
+  <!-- Tool categories -->
+  <rect x="110" y="760" width="310" height="105" rx="8" fill="#2d1f00" stroke="#92400e" stroke-width="1"/>
+  <text x="265" y="785" text-anchor="middle" fill="#fcd34d" font-size="14" font-weight="bold" font-family="Noto Sans SC, sans-serif">🌐 网络扫描与侦查</text>
+  <text x="265" y="807" text-anchor="middle" fill="#d4a913" font-size="12" font-family="Noto Sans SC, sans-serif">nmap · rustscan · masscan</text>
+  <text x="265" y="826" text-anchor="middle" fill="#d4a913" font-size="12" font-family="Noto Sans SC, sans-serif">amass · subfinder · dnsenum</text>
+  <text x="265" y="845" text-anchor="middle" fill="#d4a913" font-size="12" font-family="Noto Sans SC, sans-serif">fierce · enum4linux · arp-scan</text>
+
+  <rect x="445" y="760" width="310" height="105" rx="8" fill="#2d1f00" stroke="#92400e" stroke-width="1"/>
+  <text x="600" y="785" text-anchor="middle" fill="#fcd34d" font-size="14" font-weight="bold" font-family="Noto Sans SC, sans-serif">🕸️ Web 应用安全</text>
+  <text x="600" y="807" text-anchor="middle" fill="#d4a913" font-size="12" font-family="Noto Sans SC, sans-serif">nuclei · sqlmap · gobuster</text>
+  <text x="600" y="826" text-anchor="middle" fill="#d4a913" font-size="12" font-family="Noto Sans SC, sans-serif">nikto · ffuf · wpscan · hydra</text>
+  <text x="600" y="845" text-anchor="middle" fill="#d4a913" font-size="12" font-family="Noto Sans SC, sans-serif">xsser · dalfox · jaeles · katana</text>
+
+  <rect x="780" y="760" width="325" height="105" rx="8" fill="#2d1f00" stroke="#92400e" stroke-width="1"/>
+  <text x="942" y="785" text-anchor="middle" fill="#fcd34d" font-size="14" font-weight="bold" font-family="Noto Sans SC, sans-serif">💻 二进制与云安全</text>
+  <text x="942" y="807" text-anchor="middle" fill="#d4a913" font-size="12" font-family="Noto Sans SC, sans-serif">gdb · radare2 · binwalk</text>
+  <text x="942" y="826" text-anchor="middle" fill="#d4a913" font-size="12" font-family="Noto Sans SC, sans-serif">john · hashcat · volatility</text>
+  <text x="942" y="845" text-anchor="middle" fill="#d4a913" font-size="12" font-family="Noto Sans SC, sans-serif">trivy · prowler · kubehunter</text>
+
+  <!-- v7.0 badge -->
+  <rect x="990" y="30" width="180" height="36" rx="10" fill="#065f46" stroke="#10b981" stroke-width="1.5"/>
+  <text x="1080" y="54" text-anchor="middle" fill="#6ee7b7" font-size="15" font-weight="bold" font-family="Noto Sans SC, sans-serif">✅ v7.0 单进程架构</text>
+
+  <!-- v6.0 comparison mini callout -->
+  <rect x="30" y="30" width="190" height="36" rx="10" fill="#3b1f1f" stroke="#dc2626" stroke-width="1.5"/>
+  <text x="125" y="54" text-anchor="middle" fill="#fca5a5" font-size="15" font-weight="bold" font-family="Noto Sans SC, sans-serif">❌ 旧 v6.0 已被替代</text>
+  <text x="125" y="82" text-anchor="middle" fill="#7f1d1d" font-size="11" font-family="Noto Sans SC, sans-serif">Bridge + Flask 双进程</text>
+  <text x="125" y="97" text-anchor="middle" fill="#7f1d1d" font-size="11" font-family="Noto Sans SC, sans-serif">HTTP 同步阻塞 · 超时风险</text>
+</svg>

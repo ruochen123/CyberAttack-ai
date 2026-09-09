@@ -1,0 +1,24 @@
+{
+  "binary": "httpx",
+  "category": "web",
+  "aliases": [
+    "httpxprobe"
+  ],
+  "description": "Fast HTTP probing and technology detection",
+  "timeout": 120,
+  "command": [
+    "echo",
+    {
+      "param": "target",
+      "alt_param": "url",
+      "quote": true
+    },
+    "|",
+    "httpx",
+    {
+      "param": "additional_args",
+      "default": "-silent"
+    }
+  ],
+  "name": "httpx"
+}

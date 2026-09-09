@@ -1,0 +1,17 @@
+{
+  "binary": "ROPgadget",
+  "category": "binary",
+  "description": "ROP gadget finder",
+  "timeout": 60,
+  "command": [
+    "ROPgadget",
+    "--binary",
+    {
+      "param": "binary"
+    },
+    {
+      "param": "additional_args"
+    }
+  ],
+  "name": "ropgadget"
+}

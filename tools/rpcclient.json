@@ -1,0 +1,21 @@
+{
+  "binary": "rpcclient",
+  "category": "network",
+  "description": "RPC enumeration and null session testing",
+  "timeout": 60,
+  "command": [
+    "rpcclient",
+    "-U",
+    "''",
+    {
+      "param": "target"
+    },
+    "-c",
+    {
+      "param": "command",
+      "default": "srvinfo",
+      "quote": true
+    }
+  ],
+  "name": "rpcclient"
+}

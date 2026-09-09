@@ -1,0 +1,8 @@
+{
+  "binary": "ffuf",
+  "category": "web",
+  "description": "Fast web fuzzer with advanced filtering",
+  "timeout": 300,
+  "custom": true,
+  "name": "ffuf"
+}

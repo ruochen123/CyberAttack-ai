@@ -1,0 +1,17 @@
+{
+  "binary": "xxd",
+  "category": "binary",
+  "description": "Hex dump utility",
+  "timeout": 30,
+  "command": [
+    "xxd",
+    {
+      "param": "additional_args"
+    },
+    {
+      "param": "file",
+      "alt_param": "binary"
+    }
+  ],
+  "name": "xxd"
+}

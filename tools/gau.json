@@ -1,0 +1,17 @@
+{
+  "binary": "gau",
+  "category": "web",
+  "description": "Get All URLs — fetch known URLs from AlienVault, Wayback, etc.",
+  "timeout": 120,
+  "command": [
+    "gau",
+    {
+      "param": "domain",
+      "alt_param": "target"
+    },
+    {
+      "param": "additional_args"
+    }
+  ],
+  "name": "gau"
+}

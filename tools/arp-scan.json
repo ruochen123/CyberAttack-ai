@@ -1,0 +1,17 @@
+{
+  "binary": "arp-scan",
+  "category": "network",
+  "description": "Network discovery using ARP requests",
+  "timeout": 60,
+  "command": [
+    "arp-scan",
+    {
+      "param": "additional_args",
+      "default": "--localnet"
+    },
+    {
+      "param": "target"
+    }
+  ],
+  "name": "arp-scan"
+}

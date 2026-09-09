@@ -1,0 +1,20 @@
+{
+  "binary": "dotdotpwn",
+  "category": "web",
+  "description": "Directory traversal vulnerability scanner",
+  "timeout": 300,
+  "command": [
+    "dotdotpwn",
+    "-m",
+    "http",
+    "-h",
+    {
+      "param": "target",
+      "alt_param": "url"
+    },
+    {
+      "param": "additional_args"
+    }
+  ],
+  "name": "dotdotpwn"
+}

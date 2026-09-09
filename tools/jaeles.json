@@ -1,0 +1,24 @@
+{
+  "binary": "jaeles",
+  "category": "web",
+  "description": "Web application vulnerability scanner with signatures",
+  "timeout": 300,
+  "command": [
+    "jaeles",
+    "scan",
+    "-s",
+    {
+      "param": "signature",
+      "default": "*"
+    },
+    "-u",
+    {
+      "param": "url",
+      "alt_param": "target"
+    },
+    {
+      "param": "additional_args"
+    }
+  ],
+  "name": "jaeles"
+}

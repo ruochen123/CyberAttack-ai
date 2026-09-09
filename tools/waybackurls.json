@@ -1,0 +1,14 @@
+{
+  "binary": "waybackurls",
+  "category": "web",
+  "description": "Fetch URLs from the Wayback Machine",
+  "timeout": 120,
+  "command": [
+    "waybackurls",
+    {
+      "param": "domain",
+      "alt_param": "target"
+    }
+  ],
+  "name": "waybackurls"
+}

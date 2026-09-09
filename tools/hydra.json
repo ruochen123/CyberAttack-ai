@@ -1,0 +1,8 @@
+{
+  "binary": "hydra",
+  "category": "password",
+  "description": "Online password brute force attack tool",
+  "timeout": 600,
+  "custom": true,
+  "name": "hydra"
+}

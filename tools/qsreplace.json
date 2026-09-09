@@ -1,0 +1,19 @@
+{
+  "binary": "qsreplace",
+  "category": "web",
+  "description": "Replace query string values with a payload",
+  "timeout": 30,
+  "command": [
+    "qsreplace",
+    {
+      "param": "payload",
+      "alt_param": "replacement"
+    },
+    "<",
+    {
+      "param": "input_file",
+      "default": "/dev/stdin"
+    }
+  ],
+  "name": "qsreplace"
+}

@@ -1,0 +1,17 @@
+{
+  "binary": "one_gadget",
+  "category": "binary",
+  "aliases": [
+    "onegadget"
+  ],
+  "description": "Find one-shot RCE gadgets in libc",
+  "timeout": 60,
+  "command": [
+    "one_gadget",
+    {
+      "param": "binary",
+      "alt_param": "libc"
+    }
+  ],
+  "name": "one_gadget"
+}

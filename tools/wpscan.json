@@ -1,0 +1,18 @@
+{
+  "binary": "wpscan",
+  "category": "web",
+  "description": "WordPress security scanner",
+  "timeout": 300,
+  "command": [
+    "wpscan",
+    "--url",
+    {
+      "param": "url",
+      "alt_param": "target"
+    },
+    {
+      "param": "additional_args"
+    }
+  ],
+  "name": "wpscan"
+}

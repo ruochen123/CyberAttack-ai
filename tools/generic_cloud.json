@@ -1,0 +1,33 @@
+{
+  "binary": null,
+  "category": "cloud",
+  "aliases": [
+    "prowler",
+    "trivy",
+    "checkov",
+    "terrascan",
+    "kubehunter",
+    "kubebench",
+    "dockerbenchsecurity",
+    "clair",
+    "falco",
+    "scoutsuite",
+    "cloudmapper",
+    "pacu"
+  ],
+  "description": "Cloud / infrastructure security scanner (generic)",
+  "timeout": 600,
+  "command": [
+    {
+      "param": "__tool_name",
+      "literal": true
+    },
+    {
+      "param": "target"
+    },
+    {
+      "param": "additional_args"
+    }
+  ],
+  "name": "generic_cloud"
+}

@@ -1,0 +1,20 @@
+{
+  "binary": "anew",
+  "category": "utility",
+  "description": "Append new lines from stdin to a file (dedup)",
+  "timeout": 30,
+  "command": [
+    "cat",
+    {
+      "param": "input_file",
+      "default": "/dev/stdin"
+    },
+    "|",
+    "anew",
+    {
+      "param": "output_file",
+      "default": "/tmp/anew_output.txt"
+    }
+  ],
+  "name": "anew"
+}

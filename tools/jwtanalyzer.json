@@ -1,0 +1,20 @@
+{
+  "binary": "jwt-tool",
+  "category": "api",
+  "aliases": [
+    "jwt_analyzer"
+  ],
+  "description": "JWT token analysis and attack toolkit",
+  "timeout": 60,
+  "command": [
+    "jwt-tool",
+    {
+      "param": "token",
+      "alt_param": "jwt"
+    },
+    {
+      "param": "additional_args"
+    }
+  ],
+  "name": "jwtanalyzer"
+}

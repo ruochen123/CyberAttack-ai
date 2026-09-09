@@ -1,0 +1,17 @@
+{
+  "binary": "wafw00f",
+  "category": "web",
+  "description": "Web Application Firewall detection",
+  "timeout": 60,
+  "command": [
+    "wafw00f",
+    {
+      "param": "target",
+      "alt_param": "url"
+    },
+    {
+      "param": "additional_args"
+    }
+  ],
+  "name": "wafw00f"
+}

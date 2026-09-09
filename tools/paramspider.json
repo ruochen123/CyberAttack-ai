@@ -1,0 +1,18 @@
+{
+  "binary": "paramspider",
+  "category": "web",
+  "description": "Mining parameters from web archives",
+  "timeout": 120,
+  "command": [
+    "paramspider",
+    "-d",
+    {
+      "param": "domain",
+      "alt_param": "target"
+    },
+    {
+      "param": "additional_args"
+    }
+  ],
+  "name": "paramspider"
+}

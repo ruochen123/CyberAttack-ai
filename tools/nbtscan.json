@@ -1,0 +1,16 @@
+{
+  "binary": "nbtscan",
+  "category": "network",
+  "description": "NetBIOS name scanning and enumeration",
+  "timeout": 60,
+  "command": [
+    "nbtscan",
+    {
+      "param": "additional_args"
+    },
+    {
+      "param": "target"
+    }
+  ],
+  "name": "nbtscan"
+}

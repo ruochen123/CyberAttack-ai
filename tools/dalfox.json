@@ -1,0 +1,18 @@
+{
+  "binary": "dalfox",
+  "category": "web",
+  "description": "XSS scanning and parameter analysis",
+  "timeout": 300,
+  "command": [
+    "dalfox",
+    "url",
+    {
+      "param": "url",
+      "alt_param": "target"
+    },
+    {
+      "param": "additional_args"
+    }
+  ],
+  "name": "dalfox"
+}

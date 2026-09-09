@@ -1,0 +1,17 @@
+{
+  "binary": "binwalk",
+  "category": "binary",
+  "description": "Firmware analysis and file extraction tool",
+  "timeout": 300,
+  "command": [
+    "binwalk",
+    {
+      "param": "additional_args",
+      "default": "-Me"
+    },
+    {
+      "param": "file"
+    }
+  ],
+  "name": "binwalk"
+}
