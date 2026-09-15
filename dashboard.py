@@ -12,6 +12,7 @@
 import json
 import os
 import re
+import subprocess
 import threading
 import urllib.parse
 import uuid
@@ -134,6 +135,12 @@ textarea{resize:vertical;min-height:64px}
       <button class="btn ghost" id="nlpGo" style="flex:none">执行指令</button>
     </div>
     <div class="hint">支持 扫描 / 验证 / 加标签 / 删除 / 合并 / 报告 / 统计</div>
+    <label for="agoal" style="margin-top:14px">自主任务 — 交给 Claude Agent（多轮规划）</label>
+    <div style="display:flex;gap:8px">
+      <input id="agoal" placeholder="对 https://example.com 做侦查，验证 xss，写快照并总结">
+      <button class="btn ghost" id="ago" style="flex:none">🧠 Agent 执行</button>
+    </div>
+    <div class="hint">Claude 自助调 hexstrike 工具规划执行（headless）。目标仅限授权。</div>
     <hr style="border:none;border-top:1px solid var(--line);margin:14px 0 2px">
     <label for="tgt">目标（URL / 域名 / IP，仅授权目标）</label>
     <input id="tgt" placeholder="https://host / host:port" value="">
@@ -259,6 +266,15 @@ $("nlpGo").addEventListener("click",async()=>{
     else log("warn","未理解指令");
   }catch(e){log("err",e.message);}
 });
+$("ago").addEventListener("click",async()=>{
+  const g=$("agoal").value.trim();if(!g)return toast("输入任务目标");
+  try{
+    const r=await api("/api/jobs",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({type:"agent",goal:g})});
+    curJob=r.job_id;log("ac","🧠 已交给 Claude Agent "+r.job_id);
+    $("go").disabled=true;$("stop").disabled=false;pollT=setInterval(poll,900);await poll();
+  }catch(e){log("err",e.message);}
+});
 $("exp").addEventListener("click",()=>{const a=document.createElement("a");
   a.href="/api/report?full=1&download=1";a.download="hexstrike-report.md";document.body.appendChild(a);a.click();a.remove();
   log("ok","报告已导出");});
@@ -353,7 +369,68 @@ def _ts():
     return __import__("datetime").datetime.now().strftime("%H:%M:%S")
 
 
+def _run_agent_job(job, params):
+    """把目标交给 Claude agent（headless `claude -p`）复用现有 agent 框架。
+
+    `claude -p` 加载同一套 hexstrike MCP 工具（user scope），自我规划、调用
+    工具、写快照，与当前会话同一模型链路。事件流经 stream-json 转成前端日志。
+    """
+    import shlex
+    goal = (params.get("goal") or "").strip()
+    if not goal:
+        job.status = "error"
+        job.error = "goal 为空"
+        return
+    try:
+        s = _snapshot_db.stats()
+        prompt = (goal + "\n\n（当前资产快照：%d 资产 · 确认漏洞 %d · 待复核 %d。"
+                  "需要时可调 snapshot_report / query_assets 看上下文；若有新增或变更，"
+                  "完成后调 snapshot_update 写回快照。最后用中文简洁总结。）"
+                  % (s["total_assets"], s["total_confirmed"], s["pending_review"]))
+    except Exception:
+        prompt = goal
+    cmd = ["claude", "-p", prompt, "--output-format", "stream-json", "--verbose",
+           "--allowedTools", "mcp__hexstrike-ai__*"]
+    cwd = os.path.dirname(os.path.abspath(__file__))
+    job.log.append(f'<span class="t">{_ts()}</span> <span class="ac">🧠 交给 Claude Agent（headless）· {goal[:60]}</span>')
+    try:
+        proc = subprocess.Popen(cmd, cwd=cwd, stdout=subprocess.PIPE,
+                                stderr=subprocess.STDOUT, text=True, env=dict(os.environ))
+        for line in proc.stdout or []:
+            line = line.strip()
+            if not line.startswith("{"):
+                continue
+            try:
+                ev = json.loads(line)
+            except Exception:
+                continue
+            msg = ev.get("message") or {}
+            for c in msg.get("content") or []:
+                t = c.get("type")
+                if t == "text" and c.get("text"):
+                    job.log.append(f'<span class="t">{_ts()}</span> <span class="ok">{c["text"]}</span>')
+                elif t == "tool_use":
+                    name = c.get("name", "")
+                    job.log.append(f'<span class="t">{_ts()}</span> <span class="ac">⚙ {name}</span>')
+                    inp = c.get("input") or {}
+                    key = next((k for k in ("target", "findings_json", "query", "goal")
+                                if str(k) in inp), None)
+                    val = inp.get(key, "") if key else ""
+                    if name.startswith("mcp__hexstrike-ai__") and str(val):
+                        job.log.append(f'<span class="t">{_ts()}</span> <span class="cmd">'
+                                       f'&nbsp;&nbsp;↳ {str(val)[:110]}</span>')
+        rc = proc.wait()
+        job.result = {"rc": rc, "note": "agent 执行完毕"}
+        job.status = "done"
+    except Exception as e:
+        job.status = "error"
+        job.error = str(e)
+        job.log.append(f'<span class="t">{_ts()}</span> <span class="err">✖ {e}</span>')
+
+
 def _run_job(job, params):
+    if job.kind == "agent":
+        return _run_agent_job(job, params)
     from verifiers import nuclei_scan_and_verify, verify_findings
     try:
         logln = lambda s: job.log.append(f'<span class="t">{_ts()}</span> {s}')
