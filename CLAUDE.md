@@ -8,7 +8,7 @@ AI 渗透测试工具编排平台：Claude Code 经 MCP(stdio) 连到本服务�
 - `tools/*.json` — 67 个工具命令模板（binary/category/command 模板/aliases/timeout）。
 - `hexstrike_server.py` — ⚠️ 已废弃的 v6.0 Flask 版，不加载、不要改/启用。
 - `hexstrike-env/` — Python venv，已加 `.gitignore`，不入库。
-- `verifiers.py` — 「证据验证层」（改造②，**P0+P1 已实施 2026-09-15**）：Finding/Verdict 契约 + 5 个独立通道验证器（open_port/exposed_path/xss/sqli/tls_misconfig）+ `verify_finding`/`verify_findings`（批量 + markdown 报告）。设计见 `docs/evidence-layer-design.md`（P2 nuclei `-jsonl` 一条龙待做）。验证会对目标真实发 1–3 次请求，仅限已授权目标。
+- `verifiers.py` — 「证据验证层」（改造②，**P0+P1+P2 已实施 2026-09-15**）：Finding/Verdict 契约 + 5 个独立通道验证器（open_port/exposed_path/xss/sqli/tls_misconfig）+ `verify_finding`/`verify_findings`（批量 + markdown 报告）+ `nuclei_scan_and_verify`（nuclei `-jsonl -irr` 扫描自动转 Finding → 自动验证）。设计见 `docs/evidence-layer-design.md`。验证会对目标真实发 1–3 次请求，仅限已授权目标。
 
 ## 加新工具（改 tools/ 就够）
 

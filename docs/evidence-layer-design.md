@@ -1,9 +1,9 @@
 # HexStrike 证据验证层 — 设计文档
 
-> 状态：**P0 + P1 已实施（2026-09-15），P2 待做** ｜ 定稿日期：2026-09-15
+> 状态：**P0 + P1 + P2 已实施（2026-09-15）** ｜ 定稿日期：2026-09-15
 > 定位：HexStrike 改造清单第 ② 项，优先级最高（"可信渗透报告的分水岭"）
 > 前置：改造 ① 补工具已完成（工具就绪 29/66 → 50/66）
-> 实施：`verifiers.py`（契约 + VERIFIERS 注册表 + 5 验证器 + 批量/报告）+ `hexstrike_mcp.py` 新增 `verify_finding` / `verify_findings` 两个薄工具（已注册，152 工具）。本地全链路测试通过（confirmed/refuted/unverifiable 三态、软 404、closed 端口均正确）。三项待决已确认：五验证器全做、一并做 P1、仅授权目标。
+> 实施：`verifiers.py`（契约 + VERIFIERS 注册表 + 5 验证器 + 批量/报告 + P2 nuclei 一条龙）+ `hexstrike_mcp.py` 新增 `verify_finding` / `verify_findings` / `nuclei_scan_and_verify` 三个薄工具（已注册，153 工具）。本地全链路测试通过（含 nuclei -jsonl -irr 真扫描 → 转 Finding → 独立验证三态）。三项待决已确认：五验证器全做、一并做 P1、仅授权目标。
 
 ## 1. 背景与问题
 
@@ -113,7 +113,7 @@ verify_findings(findings_json: str, max_concurrency: int = 4,
 |---|---|---|
 | **P0** | ✅ 契约 + 5 个验证器 + `verify_finding`（单条） | 已完成（纯增量，未碰现有工具） |
 | **P1** | ✅ `verify_findings` 批量 + markdown 报告生成（`report` 字段可直接落飞书） | 已完成 |
-| **P2** | nuclei `-jsonl` 自动转 Finding → 自动验证，封装为 `nuclei_scan_and_verify` | 待做 |
+| **P2** | ✅ nuclei `-jsonl -irr` 自动转 Finding → 自动验证（`nuclei_scan_and_verify`） | 已完成（端到端测试通过） |
 
 **明确不做**：不重造 agent 循环（Claude Code 本身就是 agent）、不做分布式执行（现 `ThreadPoolExecutor` 够用）、不引入 Neo4j / 图数据库（PentAGI 已评估，代价不划算）。
 

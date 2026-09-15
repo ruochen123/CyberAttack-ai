@@ -37,6 +37,7 @@ from mcp.server.fastmcp import FastMCP
 from verifiers import (
     verify_finding as _verify_finding_impl,
     verify_findings as _verify_findings_impl,
+    nuclei_scan_and_verify as _nuclei_scan_and_verify_impl,
 )
 
 class HexStrikeColors:
@@ -4774,6 +4775,38 @@ def setup_mcp_server(hexstrike_client: HexStrikeClient) -> FastMCP:
         return _verify_findings_impl(hexstrike_client, findings_json,
                                      max_concurrency=max_concurrency,
                                      only_types=only_types)
+
+    @mcp.tool()
+    def nuclei_scan_and_verify(target: str, severity: str = "", tags: str = "",
+                               template: str = "", additional_args: str = "",
+                               timeout: int = 180, only_types: str = "",
+                               max_concurrency: int = 4) -> Dict[str, Any]:
+        """
+        一条龙：nuclei 扫描 → 自动转 Finding → 独立通道自动验证（P2）。
+
+        用 nuclei -jsonl -irr 扫描目标，把模板命中（含实际请求/响应报文）自动转成
+        Finding，再用 curl/nc/openssl 独立复验（不用 nuclei 自验），返回逐条
+        Verdict 三态判定 + markdown 报告。本质：扫描器报的每条都独立可重放。
+
+        Args:
+            target: 目标 URL / IP（仅限已授权目标）
+            severity: 按严重度过滤（critical/high/medium/low/info）
+            tags: nuclei 模板 tags 过滤
+            template: 指定模板文件/目录（-t）
+            additional_args: 追加 nuclei 参数（已强制 -jsonl -irr -silent -nc）
+            timeout: 扫描+验证总超时秒数（底层上限约 300s，超大目标请加限定缩小范围）
+            only_types: 只验证这些类型（逗号分隔），空则全部
+            max_concurrency: 并发验证数（默认 4）
+
+        Returns:
+            {scan, total, confirmed, refuted, unverifiable, results, report}
+        """
+        logger.info("🧨 nuclei -jsonl 一条龙：扫描并独立验证 (P2)")
+        return _nuclei_scan_and_verify_impl(hexstrike_client, target,
+                                            severity=severity, tags=tags,
+                                            template=template, additional_args=additional_args,
+                                            timeout=timeout, only_types=only_types,
+                                            max_concurrency=max_concurrency)
 
     @mcp.tool()
     def server_health() -> Dict[str, Any]:

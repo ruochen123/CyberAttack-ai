@@ -496,6 +496,117 @@ def verify_findings(client, findings_json: str, max_concurrency: int = 4,
     }
 
 
+# ============================================================================
+# P2：nuclei -jsonl 一条龙 —— 扫描自动转 Finding → 独立通道自动验证
+# ============================================================================
+
+_NUCLEI_KEYWORDS = (
+    # (关键词, Finding type)；命中 info.tags / template-id / matcher-name
+    ("sql-injection", "sqli"), ("sqli", "sqli"), ("sql", "sqli"),
+    ("xss", "xss"),
+    ("tls", "tls_misconfig"), ("ssl", "tls_misconfig"),
+    ("misconfiguration", "tls_misconfig"), ("misconfig", "tls_misconfig"),
+    ("path-traversal", "exposed_path"), ("traversal", "exposed_path"),
+    ("lfi", "exposed_path"), ("rfi", "exposed_path"),
+    ("exposure", "exposed_path"), ("exposed", "exposed_path"),
+    ("port", "open_port"), ("network", "open_port"), ("open", "open_port"),
+)
+
+
+def _nuclei_finding_type(info: dict, template_id: str, matcher: str) -> str:
+    tags = " ".join(str(t).lower() for t in (info.get("tags") or []))
+    hay = f"{template_id or ''} {matcher or ''} {tags}".lower()
+    for kw, ftype in _NUCLEI_KEYWORDS:
+        if kw in hay:
+            return ftype
+    return ""
+
+
+def _parse_nuclei_jsonl(text: str) -> list:
+    findings = []
+    for line in text.splitlines():
+        line = line.strip()
+        if not line or not line.startswith("{"):
+            continue
+        try:
+            o = json.loads(line)
+        except (json.JSONDecodeError, ValueError):
+            continue
+        if not isinstance(o, dict):
+            continue
+        info = o.get("info") or {}
+        host = str(o.get("host") or "")
+        matched = str(o.get("matched-at") or host)
+        if not matched or not info:
+            continue  # 非命中行（统计/诊断）跳过
+        ftype = _nuclei_finding_type(info, str(o.get("template-id") or ""),
+                                     str(o.get("matcher-name") or ""))
+        sev = str(info.get("severity") or "info").lower()
+        sev = sev if sev in {"critical", "high", "medium", "low", "info"} else "info"
+        raw = o.get("response") or json.dumps(o, ensure_ascii=False)
+        findings.append({
+            "id": finding_id(host, ftype or "nuclei", matched),
+            "target": host,
+            "type": ftype or "nuclei_misc",   # 未映射类型 → verify 走 unverifiable，不做假验证
+            "source_tool": "nuclei",
+            "matched_at": matched,
+            "severity": sev,
+            "raw": str(raw)[:RESPONSE_MAX],
+        })
+    return findings
+
+
+def nuclei_scan_and_verify(client, target: str, severity: str = "", tags: str = "",
+                           template: str = "", additional_args: str = "",
+                           timeout: int = 180, only_types: str = "",
+                           max_concurrency: int = 4) -> dict:
+    """P2 一条龙：nuclei -jsonl -irr 扫描 → 转 Finding → 独立通道验证。
+
+    - 扫描走 nuclei（模板命中自动带 request/response 报文进 JSONL）
+    - 每个命中按标签关键词映射为 finding type，映射不到的走 unverifiable（诚实不误报）
+    - 验证复用 verify_findings（nuclei 报的用 curl/nc/openssl 独立复现）
+    返回 {scan, total, confirmed, refuted, unverifiable, results, report}。
+    注意：底层 execute_command 超时上限约 300s，超大目标请拆小或加 template/tags/severity 限定。
+    """
+    parts = ["nuclei", "-u", f"'{target}'", "-jsonl", "-irr", "-silent", "-nc", "-duc"]
+    if severity:
+        parts += ["-severity", severity]
+    if tags:
+        parts += ["-tags", f"'{tags}'"]
+    if template:
+        parts += ["-t", f"'{template}'"]
+    for extra in (additional_args or "").split():
+        if extra and extra not in ("-jsonl", "-irr", "-silent", "-nc", "-duc", "-stats"):
+            parts.append(extra)
+    command = " ".join(parts)
+
+    result, latency = _run(client, command, max(30, int(timeout)))
+    stdout = result.get("stdout") or ""
+    findings = _parse_nuclei_jsonl(stdout)
+
+    scan_meta = {
+        "command": command,
+        "raw_lines": len(stdout.splitlines()),
+        "converted_findings": len(findings),
+        "nuclei_success": bool(result.get("success")),
+        "scan_seconds": round(latency / 1000, 1),
+    }
+    if not findings:
+        detail = (result.get("stderr") or "").strip()
+        if not detail and not result.get("success"):
+            detail = "nuclei 执行失败"
+        if not detail:
+            detail = "nuclei 完成但未命中任何匹配模板"
+        scan_meta["detail"] = detail[:400]
+        return {"scan": scan_meta, "verified": False, "note": "无待验证 finding"}
+
+    ver = verify_findings(client, findings, max_concurrency=max_concurrency,
+                          only_types=only_types)
+    ver["verified"] = True
+    ver["scan"] = scan_meta
+    return ver
+
+
 if __name__ == "__main__":
     import sys
     print("verifiers.py — 模块供 hexstrike_mcp.py 导入使用，无独立 CLI。", file=sys.stderr)
