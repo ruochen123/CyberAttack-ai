@@ -39,6 +39,11 @@ from verifiers import (
     verify_findings as _verify_findings_impl,
     nuclei_scan_and_verify as _nuclei_scan_and_verify_impl,
 )
+from memory import (
+    snapshot_update as _snapshot_update_impl,
+    query_assets as _query_assets_impl,
+    snapshot_report as _snapshot_report_impl,
+)
 
 class HexStrikeColors:
     """Enhanced color palette matching the server's ModernVisualEngine.COLORS"""
@@ -4807,6 +4812,65 @@ def setup_mcp_server(hexstrike_client: HexStrikeClient) -> FastMCP:
                                             template=template, additional_args=additional_args,
                                             timeout=timeout, only_types=only_types,
                                             max_concurrency=max_concurrency)
+
+    # ============================================================================
+    # CROSS-TASK MEMORY（轻量跨任务记忆，改造③）：资产快照
+    # 从 verify_findings 结果构建可跨会话复用的资产基线，风险由三态验证驱动。
+    # ============================================================================
+
+    @mcp.tool()
+    def snapshot_update(findings_json: str, snapshot_path: str = "") -> Dict[str, Any]:
+        """
+        把验证结果写入资产快照（跨任务记忆）。
+
+        将 verify_findings 的输出（{results:[...]} 或数组）upsert 进资产基线：
+        按「target|port|protocol」服务级去重，非空字段合并、first_seen 保留、
+        last_seen 刷新。风险由三态驱动：confirmed 抬级别、refuted 只留历史
+        不计、unverifiable 计待复核。快照默认存 ai-security-snapshot.json。
+
+        Args:
+            findings_json: verify_findings 结果（{"results":[...]}）或 verify_finding 单条
+            snapshot_path: 自定义快照路径（默认项目根 ai-security-snapshot.json）
+
+        Returns:
+            {assets_created, assets_updated, findings_new, total_assets}
+        """
+        logger.info("🧠 写入资产快照 (改造③)")
+        return _snapshot_update_impl(findings_json, snapshot_path)
+
+    @mcp.tool()
+    def query_assets(query: str = "", risk_level: str = "", tags: str = "",
+                     limit: int = 50, snapshot_path: str = "") -> Dict[str, Any]:
+        """
+        查询资产基线（跨任务记忆快照）。
+
+        Args:
+            query: 关键词（匹配 target/domain/ip/host/tags）
+            risk_level: 风险级别过滤（critical/high/medium/low/normal/unassessed）
+            tags: 逗号分隔 tag 过滤（命中任一）
+            limit: 最多返回条数（默认 50）
+            snapshot_path: 自定义快照路径
+
+        Returns:
+            {total, results: [资产...], stats}
+        """
+        return _query_assets_impl(query=query, risk_level=risk_level, tags=tags,
+                                  limit=limit, snapshot_path=snapshot_path)
+
+    @mcp.tool()
+    def snapshot_report(report_type: str = "overview",
+                        snapshot_path: str = "") -> Dict[str, Any]:
+        """
+        输出资产基线 markdown 报告（可直接落飞书）。
+
+        Args:
+            report_type: overview（风险分布+资产表）或 full（含 finding 详情）
+            snapshot_path: 自定义快照路径
+
+        Returns:
+            {report: markdown, stats}
+        """
+        return _snapshot_report_impl(report_type=report_type, snapshot_path=snapshot_path)
 
     @mcp.tool()
     def server_health() -> Dict[str, Any]:

@@ -17,3 +17,6 @@ build/
 .venv/
 venv/
 hexstrike-env/
+
+# Runtime snapshot (cross-task memory)
+ai-security-snapshot.json
