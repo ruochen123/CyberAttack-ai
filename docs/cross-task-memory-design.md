@@ -2,7 +2,7 @@
 
 > 状态：**P0 已实施（2026-09-15）** ｜ 借鉴来源：CyberStrikeAI 资产记忆/结果治理（参考仓库 `~/references/CyberStrikeAI`，已 clone）
 > 定位：改造清单第 ③ 项。补 HexStrike 最缺的"跨任务记忆"，吸收资产规范化/去重/合并/风险演算，**不引 Neo4j/SQLite**（沿用 [[project_pentagi-evaluation]] 结论）。
-> 交付：`memory.py`（AssetSnapshot：normalize / dedup_key / upsert / 验证驱动风险 / 查询 / markdown 报告）+ `hexstrike_mcp.py` 新增 `snapshot_update` / `query_assets` / `snapshot_report` 三个薄工具（156 工具注册）。单元测试 + 集成冒烟通过。
+> 交付：`memory.py`（AssetSnapshot：normalize / dedup_key / upsert / 验证驱动风险 / 查询 / markdown 报告）+ `hexstrike_mcp.py` 新增 `snapshot_update` / `query_assets` / `snapshot_report` 三个薄工具（当前 158 工具注册）。单元测试 + 集成冒烟通过。
 
 ## 1. 要解决的问题
 

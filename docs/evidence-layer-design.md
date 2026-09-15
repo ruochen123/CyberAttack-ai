@@ -3,7 +3,7 @@
 > 状态：**P0 + P1 + P2 已实施（2026-09-15）** ｜ 定稿日期：2026-09-15
 > 定位：HexStrike 改造清单第 ② 项，优先级最高（"可信渗透报告的分水岭"）
 > 前置：改造 ① 补工具已完成（工具就绪 29/66 → 50/66）
-> 实施：`verifiers.py`（契约 + VERIFIERS 注册表 + 5 验证器 + 批量/报告 + P2 nuclei 一条龙）+ `hexstrike_mcp.py` 新增 `verify_finding` / `verify_findings` / `nuclei_scan_and_verify` 三个薄工具（已注册，153 工具）。本地全链路测试通过（含 nuclei -jsonl -irr 真扫描 → 转 Finding → 独立验证三态）。三项待决已确认：五验证器全做、一并做 P1、仅授权目标。
+> 实施：`verifiers.py`（契约 + VERIFIERS 注册表 + 5 验证器 + 批量/报告 + P2 nuclei 一条龙）+ `hexstrike_mcp.py` 新增 `verify_finding` / `verify_findings` / `nuclei_scan_and_verify` 三个薄工具（已注册，当前 158 工具）。本地全链路测试通过（含 nuclei -jsonl -irr 真扫描 → 转 Finding → 独立验证三态）。三项待决已确认：五验证器全做、一并做 P1、仅授权目标。
 
 ## 1. 背景与问题
 

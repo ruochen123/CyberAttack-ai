@@ -30,7 +30,7 @@
 > - 唯一入口是 `hexstrike_mcp.py`，由 Claude Code 经 MCP(stdio) 拉起，各工具在本地 `subprocess` 执行 —— **无需单独起服务，也不监听 HTTP 端口**。
 > - 工具层已从"硬编码"改为 `tools/*.json` 模板（当前 67 个），新增工具只写 JSON + 把 binary 装进 PATH。
 >
-> **请以仓库根 [`CLAUDE.md`](CLAUDE.md) 为准**（关键文件 / 加新工具 / MCP 集成 / 已知坑）。证据验证层的改造设计见 [`docs/evidence-layer-design.md`](docs/evidence-layer-design.md)。
+> **请以仓库根 [`CLAUDE.md`](CLAUDE.md) 为准**（关键文件 / 加新工具 / MCP 集成 / 已知坑）。改造文档：[`docs/evidence-layer-design.md`](docs/evidence-layer-design.md)（证据验证层）、[`docs/cross-task-memory-design.md`](docs/cross-task-memory-design.md)（资产快照记忆）、[`docs/web-console.md`](docs/web-console.md)（Web 控制台）。
 
 ---
 

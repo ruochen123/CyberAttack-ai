@@ -23,6 +23,8 @@ AI 渗透测试工具编排平台：Claude Code 经 MCP(stdio) 连到本服务�
 
 - `ToolRegistry.get()` 对含 `-`/`_` 的工具名（如 `arp-scan`、`generic_web_proxy`）必须走原始名精确匹配分支，否则返回 None 调不通。
 - `build_tool_command` 4 级优先：ToolRegistry JSON → 硬编码(hydra/john/hashcat/sqlmap/ffuf/metasploit) → generic web proxy curl 兜底 → legacy command 字段。
+- Agent 自主任务依赖 `claude` CLI 在 PATH（headless `claude -p`），且需能取到 user-scope hexstrike MCP 配置；缺任一则 agent job 报错。
+- 控制台多进程共享快照：agent（headless 里的 hexstrike worker）写盘后，dashboard 每个请求重读 `ai-security-snapshot.json` 即同步；大改快照结构只在 memory.py。
 
 ## MCP 集成（Claude Code）
 
@@ -33,5 +35,6 @@ AI 渗透测试工具编排平台：Claude Code 经 MCP(stdio) 连到本服务�
 ## 调试
 
 ```bash
-cd ~/hexstrike-ai && ./hexstrike-env/bin/python3 hexstrike_mcp.py   # 前台运行
+cd ~/hexstrike-ai && ./hexstrike-env/bin/python3 hexstrike_mcp.py    # MCP 服务前台运行
+cd ~/hexstrike-ai && ./hexstrike-env/bin/python3 dashboard.py        # Web 控制台（:8765）
 ```
