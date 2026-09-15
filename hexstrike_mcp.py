@@ -34,6 +34,10 @@ from collections import OrderedDict
 
 import psutil
 from mcp.server.fastmcp import FastMCP
+from verifiers import (
+    verify_finding as _verify_finding_impl,
+    verify_findings as _verify_findings_impl,
+)
 
 class HexStrikeColors:
     """Enhanced color palette matching the server's ModernVisualEngine.COLORS"""
@@ -4721,6 +4725,55 @@ def setup_mcp_server(hexstrike_client: HexStrikeClient) -> FastMCP:
     # ============================================================================
     # SYSTEM MONITORING & TELEMETRY
     # ============================================================================
+
+    # ============================================================================
+    # EVIDENCE VERIFICATION（证据验证层，改造②）
+    # 独立通道复验 + 三态判定。实现见 verifiers.py，此处仅做薄包装。
+    # ============================================================================
+
+    @mcp.tool()
+    def verify_finding(finding_json: str, timeout: int = 30) -> Dict[str, Any]:
+        """
+        独立验证单条 finding 并返回三态判定。
+
+        用与被验工具不同的机制（curl/nc/openssl）最小复现 finding，产出
+        confirmed / refuted / unverifiable 之一 + 可手工重放的复现命令与证据哈希。
+        已注册类型：open_port、exposed_path、xss、sqli、tls_misconfig；其余类型
+        默认返回 unverifiable（不做假验证）。会对目标真实发 1-3 次请求，仅限授权目标。
+
+        Args:
+            finding_json: 单个 finding 的 JSON 字符串，字段含
+                target / type / source_tool / matched_at / severity / raw（id 可省，自动生成）
+            timeout: 单条命令超时秒数（默认 30）
+
+        Returns:
+            含 verdict 的完整结果（id/type/target/matched_at/severity/verdict）
+        """
+        logger.info("🔬 Verifying finding (evidence layer)")
+        return _verify_finding_impl(hexstrike_client, finding_json, timeout=timeout)
+
+    @mcp.tool()
+    def verify_findings(findings_json: str, max_concurrency: int = 4,
+                        only_types: str = "") -> Dict[str, Any]:
+        """
+        批量验证 findings 并生成 markdown 报告。
+
+        接受 JSON 数组 / {"findings":[...]} / 单 finding 对象 / JSONL 多行。
+        并发逐条独立复验，返回逐条 Verdict + confirmed/refuted/unverifiable 汇总
+        计数 + 可直接落飞书的 markdown 报告（report 字段）。
+
+        Args:
+            findings_json: findings 的 JSON（数组 / 包装对象 / JSONL）
+            max_concurrency: 并发验证数（默认 4）
+            only_types: 逗号分隔的类型白名单，如 "xss,sqli"，空则全部
+
+        Returns:
+            {total, confirmed, refuted, unverifiable, results, report}
+        """
+        logger.info("🔬 Verifying findings batch (evidence layer)")
+        return _verify_findings_impl(hexstrike_client, findings_json,
+                                     max_concurrency=max_concurrency,
+                                     only_types=only_types)
 
     @mcp.tool()
     def server_health() -> Dict[str, Any]:

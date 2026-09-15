@@ -22,6 +22,18 @@
 
 ---
 
+> ### ⚠️ 本仓库是本地 fork —— 以下上游 README 的安装/运行步骤已不适用
+>
+> 上游是 **v6.0 Flask 双进程**架构（MCP Bridge + `hexstrike_server.py`）。本 fork 已重构为 **v7.0 自包含单进程**：
+>
+> - `hexstrike_server.py`（Flask 服务）**已废弃，不加载、不要启动**。下文 Installation / API Reference 章节里的 `python3 hexstrike_server.py` 等步骤对本仓库**均无效**。
+> - 唯一入口是 `hexstrike_mcp.py`，由 Claude Code 经 MCP(stdio) 拉起，各工具在本地 `subprocess` 执行 —— **无需单独起服务，也不监听 HTTP 端口**。
+> - 工具层已从"硬编码"改为 `tools/*.json` 模板（当前 67 个），新增工具只写 JSON + 把 binary 装进 PATH。
+>
+> **请以仓库根 [`CLAUDE.md`](CLAUDE.md) 为准**（关键文件 / 加新工具 / MCP 集成 / 已知坑）。证据验证层的改造设计见 [`docs/evidence-layer-design.md`](docs/evidence-layer-design.md)。
+
+---
+
 <div align="center">
 
 ## Follow Our Social Accounts
