@@ -44,6 +44,10 @@ from memory import (
     query_assets as _query_assets_impl,
     snapshot_report as _snapshot_report_impl,
 )
+from dashboard import (
+    start_dashboard as _start_dashboard_impl,
+    stop_dashboard as _stop_dashboard_impl,
+)
 
 class HexStrikeColors:
     """Enhanced color palette matching the server's ModernVisualEngine.COLORS"""
@@ -4871,6 +4875,45 @@ def setup_mcp_server(hexstrike_client: HexStrikeClient) -> FastMCP:
             {report: markdown, stats}
         """
         return _snapshot_report_impl(report_type=report_type, snapshot_path=snapshot_path)
+
+    # ============================================================================
+    # VISUALIZATION（本地可视化仪表盘，改造④）：资产快照 + 三态验证结果
+    # ============================================================================
+
+    @mcp.tool()
+    def start_dashboard(port: int = 8765, snapshot_path: str = "",
+                        open_browser: bool = True) -> Dict[str, Any]:
+        """
+        启动本地可视化仪表盘（浏览器打开）。
+
+        读资产快照实时出可视化：风险分布环形图、资产明细表、finding/verdict
+        详情与复现命令，支持搜索与风险筛选、15s 自动刷新。零第三方依赖，仅绑
+        127.0.0.1。同端口重复调用复用已启动实例。
+
+        Args:
+            port: 监听端口（默认 8765）
+            snapshot_path: 快照路径（默认项目根 ai-security-snapshot.json）
+            open_browser: 是否自动打开浏览器（默认 True）
+
+        Returns:
+            {url, port, status, created, snapshot}
+        """
+        logger.info("📊 启动资产仪表盘 (改造④)")
+        return _start_dashboard_impl(snapshot_path=snapshot_path, port=port,
+                                     open_browser=open_browser)
+
+    @mcp.tool()
+    def stop_dashboard(port: int = 8765) -> Dict[str, Any]:
+        """
+        停止本地可视化仪表盘。
+
+        Args:
+            port: 仪表盘端口（默认 8765）
+
+        Returns:
+            {status, port}
+        """
+        return _stop_dashboard_impl(port=port)
 
     @mcp.tool()
     def server_health() -> Dict[str, Any]:

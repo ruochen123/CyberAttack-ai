@@ -10,6 +10,7 @@ AI 渗透测试工具编排平台：Claude Code 经 MCP(stdio) 连到本服务�
 - `hexstrike-env/` — Python venv，已加 `.gitignore`，不入库。
 - `verifiers.py` — 「证据验证层」（改造②，**P0+P1+P2 已实施 2026-09-15**）：Finding/Verdict 契约 + 5 个独立通道验证器（open_port/exposed_path/xss/sqli/tls_misconfig）+ `verify_finding`/`verify_findings`（批量 + markdown 报告）+ `nuclei_scan_and_verify`（nuclei `-jsonl -irr` 扫描自动转 Finding → 自动验证）。设计见 `docs/evidence-layer-design.md`。验证会对目标真实发 1–3 次请求，仅限已授权目标。
 - `memory.py` — 「轻量跨任务记忆」（改造③，**已实施 2026-09-15**）：单 JSON 资产快照 `AssetSnapshot`（URL/host 规范化、`target|port|protocol` 服务级去重、upsert 合并、三态驱动风险演算、查询、markdown 报告）+ `snapshot_update`/`query_assets`/`snapshot_report` 三个工具（156 工具注册）。设计见 `docs/cross-task-memory-design.md`。快照默认 `ai-security-snapshot.json`（已 .gitignore）。改它别动主文件。
+- `dashboard.py` — 「本地可视化仪表盘」（改造④，**已实施 2026-09-15**）：零第三方依赖 HTTP server + 单页 SVG 图表（风险分布环形图 / 资产明细 / finding·verdict 详情与复现命令），支持搜索与风险筛选、15s 自刷新，仅绑 127.0.0.1。`start_dashboard`/`stop_dashboard`（默认 :8765，同端口复用）。数据实时读 `ai-security-snapshot.json`。
 
 ## 加新工具（改 tools/ 就够）
 
