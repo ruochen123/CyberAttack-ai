@@ -37,7 +37,8 @@ print("start:", r)
 assert r["status"] == "running"
 
 html = urllib.request.urlopen("http://127.0.0.1:8799/").read().decode("utf-8")
-assert "HexStrike 资产仪表盘" in html
+assert "HexStrike Web Console" in html
+assert "发起操作" in html
 stats = json.load(urllib.request.urlopen("http://127.0.0.1:8799/api/stats"))
 assets = json.load(urllib.request.urlopen("http://127.0.0.1:8799/api/assets"))
 print("stats:", stats)
