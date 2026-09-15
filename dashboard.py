@@ -397,28 +397,31 @@ def _run_agent_job(job, params):
         proc = subprocess.Popen(cmd, cwd=cwd, stdout=subprocess.PIPE,
                                 stderr=subprocess.STDOUT, text=True, env=dict(os.environ))
         for line in proc.stdout or []:
-            line = line.strip()
-            if not line.startswith("{"):
-                continue
             try:
-                ev = json.loads(line)
+                s = line.strip()
+                if not s.startswith("{"):
+                    continue
+                ev = json.loads(s)
+                msg = ev.get("message")
+                if not isinstance(msg, dict):
+                    continue
+                for c in msg.get("content") or []:
+                    if not isinstance(c, dict):
+                        continue
+                    t = c.get("type")
+                    if t == "text" and c.get("text"):
+                        job.log.append(f'<span class="t">{_ts()}</span> <span class="ok">{c["text"]}</span>')
+                    elif t == "tool_use":
+                        name = c.get("name", "")
+                        job.log.append(f'<span class="t">{_ts()}</span> <span class="ac">⚙ {name}</span>')
+                        inp = c.get("input") if isinstance(c.get("input"), dict) else {}
+                        key = next((k for k in ("target", "findings_json", "query", "goal") if k in inp), None)
+                        val = str(inp.get(key, "")) if key else ""
+                        if name.startswith("mcp__hexstrike-ai__") and val:
+                            job.log.append(f'<span class="t">{_ts()}</span> <span class="cmd">'
+                                           f'&nbsp;&nbsp;↳ {val[:110]}</span>')
             except Exception:
                 continue
-            msg = ev.get("message") or {}
-            for c in msg.get("content") or []:
-                t = c.get("type")
-                if t == "text" and c.get("text"):
-                    job.log.append(f'<span class="t">{_ts()}</span> <span class="ok">{c["text"]}</span>')
-                elif t == "tool_use":
-                    name = c.get("name", "")
-                    job.log.append(f'<span class="t">{_ts()}</span> <span class="ac">⚙ {name}</span>')
-                    inp = c.get("input") or {}
-                    key = next((k for k in ("target", "findings_json", "query", "goal")
-                                if str(k) in inp), None)
-                    val = inp.get(key, "") if key else ""
-                    if name.startswith("mcp__hexstrike-ai__") and str(val):
-                        job.log.append(f'<span class="t">{_ts()}</span> <span class="cmd">'
-                                       f'&nbsp;&nbsp;↳ {str(val)[:110]}</span>')
         rc = proc.wait()
         job.result = {"rc": rc, "note": "agent 执行完毕"}
         job.status = "done"
@@ -503,6 +506,8 @@ def _findings_from_snapshot(keys: list) -> str:
 
 class _Handler(BaseHTTPRequestHandler):
     def do_GET(self):
+        if _snapshot_db:
+            _snapshot_db.load()                      # 每请求重读，跨进程（agent）同步
         route = urllib.parse.urlparse(self.path).path
         q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
         if route in ("/", "/index.html"):
@@ -537,6 +542,8 @@ class _Handler(BaseHTTPRequestHandler):
             self.send_error(404)
 
     def do_POST(self):
+        if _snapshot_db:
+            _snapshot_db.load()                      # 每请求重读，避免基于陈旧内存
         route = urllib.parse.urlparse(self.path).path
         try:
             ln = int(self.headers.get("Content-Length") or 0)
