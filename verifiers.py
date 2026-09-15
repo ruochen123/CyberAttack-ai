@@ -145,7 +145,12 @@ def _verify_exposed_path(client, finding, timeout) -> dict:
     if not base:
         return _verdict("unverifiable", "", "", "无法从 finding 提取 http(s) URL（matched_at）", 0)
     token = "HXV" + "".join(random.choice(string.ascii_lowercase) for _ in range(10))
-    rand_path = re.sub(r"/+$", "", base) + f"/{token}.html"
+    head = re.sub(r"/+$", "", base)          # 去尾部斜杠
+    if base.endswith("/"):
+        rand_path = f"{head}/{token}.html"   # 目录路径：随机落于目录内
+    else:
+        parent, _, _ = head.rpartition("/")  # 文件路径：同级替换最后一段
+        rand_path = f"{parent}/{token}.html"
     t_code, t_body, t_cmd, t_lat, t_err = _http_fetch(client, base, timeout)
     r_code, r_body, r_cmd, r_lat, r_err = _http_fetch(client, rand_path, timeout)
     cmd = f"{t_cmd}\n{r_cmd}"
