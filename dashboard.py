@@ -11,6 +11,7 @@
 
 import json
 import os
+import re
 import threading
 import urllib.parse
 import uuid
@@ -127,6 +128,13 @@ textarea{resize:vertical;min-height:64px}
 
 <main>
   <div class="panel"><h3>发起操作</h3><div class="pbody">
+    <label for="nlpInput">自然语言指令</label>
+    <div style="display:flex;gap:8px">
+      <input id="nlpInput" placeholder="扫描 https://example.com:8443 的高危 xss">
+      <button class="btn ghost" id="nlpGo" style="flex:none">执行指令</button>
+    </div>
+    <div class="hint">支持 扫描 / 验证 / 加标签 / 删除 / 合并 / 报告 / 统计</div>
+    <hr style="border:none;border-top:1px solid var(--line);margin:14px 0 2px">
     <label for="tgt">目标（URL / 域名 / IP，仅授权目标）</label>
     <input id="tgt" placeholder="https://host / host:port" value="">
     <div class="opts">
@@ -237,6 +245,20 @@ $("ftype").addEventListener("change",()=>{
   const v=$("ftype").value; $("scanOpts").hidden=v!=="scan"; $("verifyOpts").hidden=v!=="verify";});
 $("stop").addEventListener("click",async()=>{if(curJob){await api("/api/jobs/"+curJob+"/cancel",{method:"POST"});}});
 $("go").addEventListener("click",runCmd);
+$("nlpGo").addEventListener("click",async()=>{
+  const t=$("nlpInput").value.trim();if(!t)return toast("输入指令");
+  try{
+    const r=await api("/api/nlp",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({text:t})});
+    if(r.error){log("err",r.error);return toast(r.error);}
+    if(r.job_id){curJob=r.job_id;log("ac","指令 → "+r.kind+" "+r.job_id);
+      $("go").disabled=true;$("stop").disabled=false;pollT=setInterval(poll,900);await poll();}
+    else if(r.ok){toast(r.message||"完成");log("ok",r.message||"完成");
+      if(r.stats)log("ok",`资产 ${r.stats.total_assets} · 确认漏洞 ${r.stats.total_confirmed} · 待复核 ${r.stats.pending_review}`);
+      loadAssets();}
+    else log("warn","未理解指令");
+  }catch(e){log("err",e.message);}
+});
 $("exp").addEventListener("click",()=>{const a=document.createElement("a");
   a.href="/api/report?full=1&download=1";a.download="hexstrike-report.md";document.body.appendChild(a);a.click();a.remove();
   log("ok","报告已导出");});
@@ -372,6 +394,34 @@ def _start_job(job, params):
     return job
 
 
+def _resolve_keys(hay: str) -> list:
+    """把指令/目标词解析为快照资产 key：target 整词出现优先，再退 host。"""
+    hay = hay or ""
+    out = []
+    for k, a in _snapshot_db.data["assets"].items():
+        tgt = str(a.get("target") or "")
+        host = str(a.get("host") or "")
+        if tgt and re.search(r"(?<![A-Za-z0-9-])" + re.escape(tgt) + r"(?![A-Za-z0-9-])", hay):
+            out.append(k)
+        elif host and host in hay.split():
+            out.append(k)
+    return out
+
+
+def _findings_from_snapshot(keys: list) -> str:
+    """从快照取目标资产的 confirmed/unverifiable finding 构造成 verify 输入。"""
+    res = []
+    for k in keys or []:
+        a = _snapshot_db.data["assets"].get(k) or {}
+        for f in a.get("findings", []):
+            if f.get("verdict") in ("confirmed", "unverifiable"):
+                res.append({"id": f.get("id", ""), "target": a.get("target", ""),
+                            "type": f.get("type", ""), "source_tool": "snapshot",
+                            "matched_at": f.get("matched_at", a.get("target", "")),
+                            "severity": f.get("severity", "info"), "raw": ""})
+    return json.dumps(res, ensure_ascii=False)
+
+
 # ---- HTTP ----
 
 class _Handler(BaseHTTPRequestHandler):
@@ -461,6 +511,77 @@ class _Handler(BaseHTTPRequestHandler):
             _snapshot_db._recompute_risk(target)
             _snapshot_db.save()
             self._json({"merged": len(keys)})
+        elif route == "/api/nlp":
+            from nlp import parse_action
+            text = str(body.get("text") or "").strip()
+            if not text:
+                return self._json({"error": "指令为空"}, 400)
+            action = parse_action(text)
+            op = action.get("op")
+            p = action.get("params") or {}
+
+            if op in ("scan", "verify"):
+                if op == "scan":
+                    if not p.get("target"):
+                        return self._json({"error": "未能从指令提取目标（示例：扫描 https://host 的高危 xss）"}, 400)
+                else:
+                    fjs = (p.get("findings_json") or "").strip()
+                    if not fjs:
+                        keys = _resolve_keys(text + " " + p.get("target", ""))
+                        fjs = _findings_from_snapshot(keys)
+                        if not fjs or fjs == "[]":
+                            return self._json({"error": "该目标快照里没有可复验 finding，可在指令中直接贴 findings JSON"}, 400)
+                    p["findings_json"] = fjs
+                job = _jobs.create(op, op)
+                _start_job(job, p)
+                self._json(_jobs.render(job), 202)
+            elif op == "tag":
+                keys = _resolve_keys(text + " " + p.get("target", ""))
+                add = [t.strip() for t in re.split(r"[,，;；\s]+", p.get("add") or "") if t.strip()]
+                if not keys:
+                    return self._json({"error": "快照里没匹配到目标资产"}, 404)
+                if not add:
+                    return self._json({"error": "没看懂要加什么标签"}, 400)
+                n = 0
+                for k in keys:
+                    a = _snapshot_db.data["assets"].get(k)
+                    if a:
+                        a["tags"] = memory._clean_tags(a.get("tags", []) + add)
+                        n += 1
+                _snapshot_db.save()
+                self._json({"ok": True, "message": f"已给 {n} 个资产加标签：{','.join(add)}", "matched": keys})
+            elif op == "delete":
+                keys = _resolve_keys(text + " " + p.get("target", ""))
+                if not keys:
+                    return self._json({"error": "快照里没匹配到目标资产"}, 404)
+                n = sum(1 for k in keys if _snapshot_db.data["assets"].pop(k, None))
+                _snapshot_db.save()
+                self._json({"ok": True, "message": f"已删除 {n} 个资产", "matched": keys})
+            elif op == "merge":
+                keys = _resolve_keys(text + " " + (p.get("keep") or ""))
+                if len(keys) < 2:
+                    return self._json({"error": "合并需要至少匹配到 2 个资产"}, 400)
+                keep = keys[0]
+                target = _snapshot_db.data["assets"].get(keep)
+                merged = 0
+                for k in keys[1:]:
+                    other = _snapshot_db.data["assets"].pop(k, None)
+                    if not other:
+                        continue
+                    target["tags"] = memory._clean_tags(target.get("tags", []) + other.get("tags", []))
+                    for f in other.get("findings", []):
+                        if f not in target.setdefault("findings", []):
+                            target["findings"].append(f)
+                    merged += 1
+                _snapshot_db._recompute_risk(target)
+                _snapshot_db.save()
+                self._json({"ok": True, "message": f"已合并 {merged} 个资产到 {target.get('target', keep)}"})
+            elif op == "report":
+                md = _snapshot_db.to_markdown(overview_only=False)
+                self._json({"ok": True, "report_note": "报告已生成", "report": md,
+                            "stats": _snapshot_db.stats()})
+            else:
+                self._json({"ok": True, "stats": _snapshot_db.stats()})
         else:
             self._json({"error": "unknown route"}, 404)
 
