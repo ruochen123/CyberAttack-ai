@@ -12,8 +12,12 @@
 import json
 import os
 import re
+import signal
+import socket
 import subprocess
+import sys
 import threading
+import time
 import urllib.parse
 import uuid
 import webbrowser
@@ -239,8 +243,7 @@ function render(){
       <td>${riskBadge(a.risk_level)}</td><td class="mono">${a.vuln_count||0}</td><td class="mono">${a.pending_review||0}</td>
       <td>${(a.tags||[]).map(t=>`<span class="tag">${esc(t)}</span>`).join("")||""}</td></tr>
       <tr class="find" hidden><td colspan="7">${inner}</td></tr>`;
-  }).join("") || `<tr class="empty"><td colspan="7">无匹配资产</td></tr>`;
-  $("empty").hidden=pool.length>0;
+  }).join("") || `<tr class="empty"><td colspan="7">${assets.length?"无匹配资产":"快照为空 — 先发起一次操作"}</td></tr>`;
 }
 $("q").addEventListener("input",render);
 $("rows").addEventListener("click",e=>{
@@ -752,12 +755,79 @@ def stop_dashboard(port: int = DEFAULT_PORT, host: str = "127.0.0.1") -> dict:
 _active_lock = threading.Lock()
 
 
+def _port_open(host: str, port: int, timeout: float = 0.5) -> bool:
+    try:
+        with socket.create_connection((host, int(port)), timeout=timeout):
+            return True
+    except OSError:
+        return False
+
+
+def _listening_pids(port: int) -> list:
+    try:
+        r = subprocess.run(["lsof", "-nP", "-tiTCP:" + str(port), "-sTCP:LISTEN"],
+                           capture_output=True, text=True, timeout=5)
+        return [l for l in r.stdout.split() if l.strip().isdigit()]
+    except Exception:
+        return []
+
+
+def spawn_dashboard(snapshot_path: str = "", port: int = DEFAULT_PORT,
+                    host: str = "127.0.0.1", open_browser: bool = True) -> dict:
+    """独立进程式控制台入口（幂等，全平台唯一运行形态）。
+
+    端口已监听 → 直接复用；否则拉起 dashboard.py 独立进程
+    （start_new_session，不随调用方会话结束而退出，日志 /tmp/hexdash.log）。
+    与 ~/.zshrc 的 `hexdash` 函数是同一形态，二者任一调用都作用于同一进程。
+    """
+    url = f"http://{host}:{int(port)}/"
+    if _port_open(host, int(port)):
+        time.sleep(0.2)          # 避开「刚 stop 端口未关」的竞态窗口
+        if _port_open(host, int(port)):
+            if open_browser:
+                webbrowser.open(url)
+            return {"url": url, "port": int(port), "status": "running",
+                    "created": False,
+                    "snapshot": _snapshot_db.stats() if _snapshot_db else None}
+    here = os.path.dirname(os.path.abspath(__file__))
+    cmd = [sys.executable, os.path.abspath(__file__), snapshot_path, str(int(port))]
+    with open("/tmp/hexdash.log", "ab") as logf:
+        subprocess.Popen(cmd, cwd=here, stdin=subprocess.DEVNULL,
+                         stdout=logf, stderr=subprocess.STDOUT,
+                         start_new_session=True)
+    for _ in range(20):
+        if _port_open(host, int(port)):
+            break
+        time.sleep(0.5)
+    ok = _port_open(host, int(port))
+    if open_browser:
+        webbrowser.open(url)
+    return {"url": url, "port": int(port), "status": "running" if ok else "starting",
+            "created": True, "snapshot": None}
+
+
+def stop_dashboard_process(port: int = DEFAULT_PORT, host: str = "127.0.0.1") -> dict:
+    """按端口停止独立 dashboard 进程（与 hexdash stop 语义一致）。"""
+    pids = _listening_pids(int(port))
+    if not pids:
+        return {"status": "not_running", "port": int(port)}
+    for pid in pids:
+        try:
+            os.kill(int(pid), signal.SIGTERM)
+        except (ProcessLookupError, PermissionError):
+            pass
+    return {"status": "stopped", "port": int(port), "pids": pids}
+
+
 if __name__ == "__main__":
-    import sys
-    print(start_dashboard(sys.argv[1] if len(sys.argv) > 1 else ""))
-    import time
+    snap = sys.argv[1] if len(sys.argv) > 1 else ""
+    port = DEFAULT_PORT
+    if len(sys.argv) > 2 and str(sys.argv[2]).strip().isdigit():
+        port = int(sys.argv[2])
+    print(json.dumps(start_dashboard(snap, port=port, host="127.0.0.1"),
+                     ensure_ascii=False), flush=True)
     try:
         while True:
             time.sleep(3600)
     except KeyboardInterrupt:
-        stop_dashboard()
+        stop_dashboard(port=port)

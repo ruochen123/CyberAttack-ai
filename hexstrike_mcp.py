@@ -45,8 +45,8 @@ from memory import (
     snapshot_report as _snapshot_report_impl,
 )
 from dashboard import (
-    start_dashboard as _start_dashboard_impl,
-    stop_dashboard as _stop_dashboard_impl,
+    spawn_dashboard as _spawn_dashboard_impl,
+    stop_dashboard_process as _stop_dashboard_proc_impl,
 )
 
 class HexStrikeColors:
@@ -4888,7 +4888,8 @@ def setup_mcp_server(hexstrike_client: HexStrikeClient) -> FastMCP:
 
         读资产快照实时出可视化：风险分布环形图、资产明细表、finding/verdict
         详情与复现命令，支持搜索与风险筛选、15s 自动刷新。零第三方依赖，仅绑
-        127.0.0.1。同端口重复调用复用已启动实例。
+        127.0.0.1。以独立进程常驻（等同 shell 的 hexdash），同端口重复调用
+        复用，不随当前会话结束而退出。
 
         Args:
             port: 监听端口（默认 8765）
@@ -4898,8 +4899,8 @@ def setup_mcp_server(hexstrike_client: HexStrikeClient) -> FastMCP:
         Returns:
             {url, port, status, created, snapshot}
         """
-        logger.info("📊 启动资产仪表盘 (改造④)")
-        return _start_dashboard_impl(snapshot_path=snapshot_path, port=port,
+        logger.info("📊 启动资产控制台（独立进程·单入口）")
+        return _spawn_dashboard_impl(snapshot_path=snapshot_path, port=port,
                                      open_browser=open_browser)
 
     @mcp.tool()
@@ -4913,7 +4914,7 @@ def setup_mcp_server(hexstrike_client: HexStrikeClient) -> FastMCP:
         Returns:
             {status, port}
         """
-        return _stop_dashboard_impl(port=port)
+        return _stop_dashboard_proc_impl(port=port)
 
     @mcp.tool()
     def server_health() -> Dict[str, Any]:

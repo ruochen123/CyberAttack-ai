@@ -6,11 +6,11 @@ AI 渗透测试工具编排平台：Claude Code 经 MCP(stdio) 连到本服务�
 
 - `hexstrike_mcp.py` — 主 MCP 服务（v7.0，唯一入口）。工具处理三层：`ToolRegistry`(JSON 配置) → `build_tool_command`(命令构建) → `LocalExecutionEngine`(subprocess 执行)。
 - `tools/*.json` — 67 个工具命令模板（binary/category/command 模板/aliases/timeout）。
-- `hexstrike_server.py` — ⚠️ 已废弃的 v6.0 Flask 版，不加载、不要改/启用。
+- `hexstrike_server.py` — ⚠️ 已废弃 v6.0 Flask 版，2026-09-17 已删除（git 历史可恢复）。
 - `hexstrike-env/` — Python venv，已加 `.gitignore`，不入库。
 - `verifiers.py` — 「证据验证层」（改造②，**P0+P1+P2 已实施 2026-09-15**）：Finding/Verdict 契约 + 5 个独立通道验证器（open_port/exposed_path/xss/sqli/tls_misconfig）+ `verify_finding`/`verify_findings`（批量 + markdown 报告）+ `nuclei_scan_and_verify`（nuclei `-jsonl -irr` 扫描自动转 Finding → 自动验证）。设计见 `docs/evidence-layer-design.md`。验证会对目标真实发 1–3 次请求，仅限已授权目标。
 - `memory.py` — 「轻量跨任务记忆」（改造③，**已实施 2026-09-15**）：单 JSON 资产快照 `AssetSnapshot`（URL/host 规范化、`target|port|protocol` 服务级去重、upsert 合并、三态驱动风险演算、查询、markdown 报告）+ `snapshot_update`/`query_assets`/`snapshot_report` 三个工具（156 工具注册）。设计见 `docs/cross-task-memory-design.md`。快照默认 `ai-security-snapshot.json`（已 .gitignore）。改它别动主文件。
-- `dashboard.py` — 「本地 Web 控制台」（改造④-交互，**已实施 2026-09-15**）：零依赖单页交互 UI（frontend-design「界面即命令」）。**可执行**：发起扫描/验证（nuclei→自动复验）、后台 job 轮询进度、自动写资产快照、资产增删/标签/合并、报告导出、mono 活动日志（每一步留可复现命令）。**自然语言驱动**：顶部指令框走 `POST /api/nlp`（见 `nlp.py`）。**Agent 自主任务**：`POST /api/jobs` `type=agent` 起 **headless `claude -p`**（`--allowedTools mcp__hexstrike-ai__*`）——复用现有 Claude agent 框架做多轮规划：自己调 hexstrike 工具、写快照、结束中文总结，事件流经 stream-json 转前端日志。展示：统计/风险/资产表/finding·verdict 详情。仅绑 127.0.0.1。`start_dashboard`/`stop_dashboard`（默认 :8765，同端口复用）。执行复用 verifiers/memory，不重写执行层。
+- `dashboard.py` — 「本地 Web 控制台」（改造④-交互，**已实施 2026-09-15**）：零依赖单页交互 UI（frontend-design「界面即命令」）。**可执行**：发起扫描/验证（nuclei→自动复验）、后台 job 轮询进度、自动写资产快照、资产增删/标签/合并、报告导出、mono 活动日志（每一步留可复现命令）。**自然语言驱动**：顶部指令框走 `POST /api/nlp`（见 `nlp.py`）。**Agent 自主任务**：`POST /api/jobs` `type=agent` 起 **headless `claude -p`**（`--allowedTools mcp__hexstrike-ai__*`）——复用现有 Claude agent 框架做多轮规划：自己调 hexstrike 工具、写快照、结束中文总结，事件流经 stream-json 转前端日志。展示：统计/风险/资产表/finding·verdict 详情。仅绑 127.0.0.1。控制台为**单入口独立进程**：MCP 工具 `start_dashboard`/`stop_dashboard` 走 `spawn_dashboard`/`stop_dashboard_process`（端口幂等复用、按端口 lsof 停，等同 shell `hexdash`），线程版保留给测试与 `__main__`。执行复用 verifiers/memory，不重写执行层。
 - `nlp.py` — 「自然语言 → 动作」（改造④-NL，**已实施**）：把指令解析为动作 schema（scan/verify/tag/delete/merge/report/stats）。优先 DeepSeek chat（`response_format json`，env `DEEPSEEK_API_KEY`），无 key 或调用失败回退本地关键词规则；`target`/`severity`/`tags`/JSON 提取。规则模式够大多数命令；要更强理解配好 key 即可。
 
 ## 加新工具（改 tools/ 就够）
@@ -36,5 +36,5 @@ AI 渗透测试工具编排平台：Claude Code 经 MCP(stdio) 连到本服务�
 
 ```bash
 cd ~/hexstrike-ai && ./hexstrike-env/bin/python3 hexstrike_mcp.py    # MCP 服务前台运行
-cd ~/hexstrike-ai && ./hexstrike-env/bin/python3 dashboard.py        # Web 控制台（:8765）
+hexdash / hexdash stop    # Web 控制台一键启停（任意终端，独立进程；见 docs/web-console.md）
 ```

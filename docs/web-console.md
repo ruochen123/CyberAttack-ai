@@ -6,13 +6,20 @@
 
 ## 启动
 
+**一键（推荐，任意终端）：**
+
 ```bash
-cd ~/hexstrike-ai
-./hexstrike-env/bin/python3 dashboard.py          # 独立进程，默认 :8765，自动开浏览器
-# 端口/快照自定：dashboard.py <snapshot_path> 或改 DEFAULT_PORT
+hexdash             # 启动 :8765，自动开浏览器；已在运行则复用
+hexdash stop        # 停止
 ```
 
-也可以经 MCP 工具启停（Claude 会话内）：`start_dashboard(port=8765, open_browser=True)` / `stop_dashboard(port=8765)`。同端口重复调用复用实例。
+`hexdash` 定义在 `~/.zshrc`，实际是 `nohup dashboard.py` 起**独立进程**（PPID=1、日志 /tmp/hexdash.log），不受 Claude 会话/MCP 影响。等价直接跑：
+
+```bash
+cd ~/hexstrike-ai && ./hexstrike-env/bin/python3 dashboard.py
+```
+
+也可以经 MCP 工具启停（Claude 会话内）：`start_dashboard(port=8765)` / `stop_dashboard(port=8765)`。2026-09-17 起 MCP 工具与 `hexdash` 同为**独立进程形态**（走 `spawn_dashboard`/`stop_dashboard_process`，端口幂等复用、按端口停止），已无"会话内线程、随会话退出"的旧行为，MCP 断开不影响控制台。
 
 打开 `http://127.0.0.1:8765/` 即控制台。
 
