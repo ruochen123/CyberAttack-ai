@@ -2,19 +2,19 @@
 
 <img src="assets/hexstrike-logo.png" alt="HexStrike AI Logo" width="220" style="margin-bottom: 20px;"/>
 
-# HexStrike AI MCP Agents v6.0
+# HexStrike AI MCP Agents v7.0
 ### AI-Powered MCP Cybersecurity Automation Platform
 
 [![Python](https://img.shields.io/badge/Python-3.8%2B-blue.svg)](https://www.python.org/)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Security](https://img.shields.io/badge/Security-Penetration%20Testing-red.svg)](https://github.com/0x4m4/hexstrike-ai)
 [![MCP](https://img.shields.io/badge/MCP-Compatible-purple.svg)](https://github.com/0x4m4/hexstrike-ai)
-[![Version](https://img.shields.io/badge/Version-6.0.0-orange.svg)](https://github.com/0x4m4/hexstrike-ai/releases)
-[![Tools](https://img.shields.io/badge/Security%20Tools-150%2B-brightgreen.svg)](https://github.com/0x4m4/hexstrike-ai)
+[![Version](https://img.shields.io/badge/Version-7.0.0-orange.svg)](https://github.com/0x4m4/hexstrike-ai/releases)
+[![Tools](https://img.shields.io/badge/Security%20Tools-67-brightgreen.svg)](https://github.com/0x4m4/hexstrike-ai)
 [![Agents](https://img.shields.io/badge/AI%20Agents-12%2B-purple.svg)](https://github.com/0x4m4/hexstrike-ai)
 [![Stars](https://img.shields.io/github/stars/0x4m4/hexstrike-ai?style=social)](https://github.com/0x4m4/hexstrike-ai)
 
-**Advanced AI-powered penetration testing MCP framework with 150+ security tools and 12+ autonomous AI agents**
+**Advanced AI-powered penetration testing MCP framework — MCP stdio, self-contained single process, 67 security tools via `tools/*.json` templates**
 
 [📋 What's New](#whats-new-in-v60) • [🏗️ Architecture](#architecture-overview) • [🚀 Installation](#installation) • [🛠️ Features](#features) • [🤖 AI Agents](#ai-agents) • [📡 API Reference](#api-reference)
 
@@ -56,7 +56,7 @@
 
 ## Architecture Overview
 
-HexStrike AI MCP v6.0 features a multi-agent architecture with autonomous AI agents, intelligent decision-making, and vulnerability intelligence.
+HexStrike AI MCP v7.0 features a multi-agent architecture with autonomous AI agents, intelligent decision-making, and vulnerability intelligence.
 
 ```mermaid
 %%{init: {"themeVariables": {
@@ -71,7 +71,7 @@ HexStrike AI MCP v6.0 features a multi-agent architecture with autonomous AI age
   "nodeTextColor": "#fffde7"
 }}}%%
 graph TD
-    A[AI Agent - Claude/GPT/Copilot] -->|MCP Protocol| B[HexStrike MCP Server v6.0]
+    A[AI Agent - Claude/GPT/Copilot] -->|MCP Protocol| B[HexStrike MCP Server v7.0]
     
     B --> C[Intelligent Decision Engine]
     B --> D[12+ Autonomous AI Agents]
@@ -90,7 +90,7 @@ graph TD
     E --> N[Progress Visualization]
     E --> O[Vulnerability Cards]
     
-    B --> P[150+ Security Tools]
+    B --> P[67 Security Tools (tools/*.json templates)]
     P --> Q[Network Tools - 25+]
     P --> R[Web App Tools - 40+]
     P --> S[Cloud Tools - 20+]
@@ -199,27 +199,25 @@ sudo apt update && sudo apt install google-chrome-stable
 
 ### Start the Server
 
+> v7.0 is a self-contained **MCP (stdio)** process — there is no HTTP server and no `hexstrike_server.py` (deleted; do not start it). The MCP service is normally auto-launched by Claude Code via the user-scope `mcpServers.hexstrike-ai` entry in `~/.claude.json`.
+
 ```bash
-# Start the MCP server
-python3 hexstrike_server.py
+# Run the MCP service in the foreground (for Claude Code / MCP clients)
+./hexstrike-env/bin/python3 hexstrike_mcp.py
 
-# Optional: Start with debug mode
-python3 hexstrike_server.py --debug
-
-# Optional: Custom port configuration
-python3 hexstrike_server.py --port 8888
+# Optional local web console (see docs/web-console.md)
+hexdash            # start / reuse :8765 and open browser
+hexdash stop       # stop it
 ```
 
 ### Verify Installation
 
 ```bash
-# Test server health
-curl http://localhost:8888/health
+# Check the MCP process is running
+ps -eo pid,args | grep '[h]exstrike_mcp.py'
 
-# Test AI agent capabilities
-curl -X POST http://localhost:8888/api/intelligence/analyze-target \
-  -H "Content-Type: application/json" \
-  -d '{"target": "example.com", "analysis_type": "comprehensive"}'
+# Check the web console in a browser
+open http://127.0.0.1:8765/
 ```
 
 ---
@@ -233,13 +231,11 @@ Edit `~/.config/Claude/claude_desktop_config.json`:
 {
   "mcpServers": {
     "hexstrike-ai": {
-      "command": "python3",
+      "command": "hexstrike-env/bin/python3",
       "args": [
-        "/path/to/hexstrike-ai/hexstrike_mcp.py",
-        "--server",
-        "http://localhost:8888"
+        "/path/to/hexstrike-ai/hexstrike_mcp.py"
       ],
-      "description": "HexStrike AI v6.0 - Advanced Cybersecurity Automation Platform",
+      "description": "HexStrike AI v7.0 - MCP stdio (self-contained single process)",
       "timeout": 300,
       "disabled": false
     }
@@ -255,11 +251,9 @@ Configure VS Code settings in `.vscode/settings.json`:
   "servers": {
     "hexstrike": {
       "type": "stdio",
-      "command": "python3",
+      "command": "hexstrike-env/bin/python3",
       "args": [
-        "/path/to/hexstrike-ai/hexstrike_mcp.py",
-        "--server",
-        "http://localhost:8888"
+        "/path/to/hexstrike-ai/hexstrike_mcp.py"
       ]
     }
   },
@@ -273,7 +267,7 @@ Configure VS Code settings in `.vscode/settings.json`:
 
 ### Security Tools Arsenal
 
-**150+ Professional Security Tools:**
+**67 Security Tools (command templates in `tools/*.json`):**
 
 <details>
 <summary><b>🔍 Network Reconnaissance & Scanning (25+ Tools)</b></summary>
@@ -512,57 +506,32 @@ Configure VS Code settings in `.vscode/settings.json`:
 
 ## API Reference
 
-### Core System Endpoints
+> v7.0 exposes **no HTTP service** (`hexstrike_server.py` is deleted). It has two surfaces:
 
+**1. MCP tools (stdio)** — registered in `hexstrike_mcp.py` from command templates in `tools/*.json` (67 tools) through a three-layer pipeline: `ToolRegistry` (JSON config) → `build_tool_command` → `LocalExecutionEngine` (subprocess). Additional capability tools registered alongside:
+- `snapshot_update` / `query_assets` / `snapshot_report` — asset snapshot memory (`memory.py`)
+- `verify_finding` / `verify_findings` / `nuclei_scan_and_verify` — evidence verification (`verifiers.py`)
+- `start_dashboard` / `stop_dashboard` — web console lifecycle (`dashboard.py`)
+
+**2. Web console HTTP API (loopback `127.0.0.1:8765` only)** — see `docs/web-console.md`:
 | Endpoint | Method | Description |
 |----------|--------|-------------|
-| `/health` | GET | Server health check with tool availability |
-| `/api/command` | POST | Execute arbitrary commands with caching |
-| `/api/telemetry` | GET | System performance metrics |
-| `/api/cache/stats` | GET | Cache performance statistics |
-| `/api/intelligence/analyze-target` | POST | AI-powered target analysis |
-| `/api/intelligence/select-tools` | POST | Intelligent tool selection |
-| `/api/intelligence/optimize-parameters` | POST | Parameter optimization |
+| `/api/stats` · `/api/assets` | GET | Asset snapshot (re-read from `ai-security-snapshot.json`) |
+| `/api/report?full=1[&download=1]` | GET | Markdown report / download |
+| `/api/jobs` | POST | Create job `type=scan | verify | agent` (agent supports `resume_session:"last"`, `model`, `fence`) |
+| `/api/jobs/<id>` | GET | Poll job progress |
+| `/api/jobs/<id>/cancel | interrupt | resume` | POST | Cancel / pause-and-keep-session / resume with `{text, model, fence}` |
+| `/api/nlp` | POST | Natural language → action `{text}` |
+| `/api/menu` | GET | `/` menu (commands / skills / MCP tools / other servers) |
+| `/api/panel/<cmd>` | GET | Command panel: mcp\|skills\|model\|permissions\|config\|memory\|agents\|add-dir\|clear\|compact\|resume\|rewind |
+| `/api/mcp` · `/api/mcp/toggle` | GET/POST | MCP server status / session-scoped toggle (`mcp-servers-state.json`) |
+| `/api/skills` · `/api/skill/read` | GET | Skill list (frontmatter desc/path) / SKILL.md preview |
+| `/api/jobs` agent | — | single-active-task guard (running/paused → 409), input = `claude` CLI passthrough |
+| `/api/assets/tags | delete | merge` | POST | Asset management |
 
 ### Common MCP Tools
 
-**Network Security Tools:**
-- `nmap_scan()` - Advanced Nmap scanning with optimization
-- `rustscan_scan()` - Ultra-fast port scanning
-- `masscan_scan()` - High-speed port scanning
-- `autorecon_scan()` - Comprehensive reconnaissance
-- `amass_enum()` - Subdomain enumeration and OSINT
-
-**Web Application Tools:**
-- `gobuster_scan()` - Directory and file enumeration
-- `feroxbuster_scan()` - Recursive content discovery
-- `ffuf_scan()` - Fast web fuzzing
-- `nuclei_scan()` - Vulnerability scanning with templates
-- `sqlmap_scan()` - SQL injection testing
-- `wpscan_scan()` - WordPress security assessment
-
-**Binary Analysis Tools:**
-- `ghidra_analyze()` - Software reverse engineering
-- `radare2_analyze()` - Advanced reverse engineering
-- `gdb_debug()` - GNU debugger with exploit development
-- `pwntools_exploit()` - CTF framework and exploit development
-- `angr_analyze()` - Binary analysis with symbolic execution
-
-**Cloud Security Tools:**
-- `prowler_assess()` - AWS/Azure/GCP security assessment
-- `scout_suite_audit()` - Multi-cloud security auditing
-- `trivy_scan()` - Container vulnerability scanning
-- `kube_hunter_scan()` - Kubernetes penetration testing
-- `kube_bench_check()` - CIS Kubernetes benchmark assessment
-
-### Process Management
-
-| Action | Endpoint | Description |
-|--------|----------|-------------|
-| **List Processes** | `GET /api/processes/list` | List all active processes |
-| **Process Status** | `GET /api/processes/status/<pid>` | Get detailed process information |
-| **Terminate** | `POST /api/processes/terminate/<pid>` | Stop specific process |
-| **Dashboard** | `GET /api/processes/dashboard` | Live monitoring dashboard |
+The authoritative tool list lives in `tools/*.json` (67 templates: binary/category/command template/aliases/timeout). Lookups go through `ToolRegistry.get()` (exact-name matching for names containing `-`/`_`). Representative existing tools: `amass`, `autorecon`, `arp-scan`, `dalfox`, `dirsearch`, `nuclei`, `sqlmap`, `ffuf`, `gobuster`, `wpscan`, `nmap` (not limited to these; see `tools/`).
 
 ---
 
@@ -577,7 +546,7 @@ AI Agent: "Thank you for clarifying ownership and intent. To proceed with a pene
 
 ### **Real-World Performance**
 
-| Operation | Traditional Manual | HexStrike v6.0 AI | Improvement |
+| Operation | Traditional Manual | HexStrike v7.0 AI | Improvement |
 |-----------|-------------------|-------------------|-------------|
 | **Subdomain Enumeration** | 2-4 hours | 5-10 minutes | **24x faster** |
 | **Vulnerability Scanning** | 4-8 hours | 15-30 minutes | **16x faster** |
@@ -595,19 +564,9 @@ AI Agent: "Thank you for clarifying ownership and intent. To proceed with a pene
 
 ---
 
-## HexStrike AI v7.0 - Release Coming Soon!
+## HexStrike AI v7.0 (current)
 
-### Key Improvements & New Features
-
-- **Streamlined Installation Process** - One-command setup with automated dependency management
-- **Docker Container Support** - Containerized deployment for consistent environments
-- **250+ Specialized AI Agents/Tools** - Expanded from 150+ to 250+ autonomous security agents
-- **Native Desktop Client** - Full-featured Application ([www.hexstrike.com](https://www.hexstrike.com))
-- **Advanced Web Automation** - Enhanced Selenium integration with anti-detection
-- **JavaScript Runtime Analysis** - Deep DOM inspection and dynamic content handling
-- **Memory Optimization** - 40% reduction in resource usage for large-scale operations
-- **Enhanced Error Handling** - Graceful degradation and automatic recovery mechanisms
-- **Bypassing Limitations** - Fixed limited allowed mcp tools by MCP clients
+v7.0 is the **current release** and is already implemented (2026-09): a self-contained single-process MCP service (`hexstrike_mcp.py`, stdio) built on the three-layer pipeline `ToolRegistry` (67 templates in `tools/*.json`) → `build_tool_command` → `LocalExecutionEngine`. Key additions over the v6.0 Flask architecture: evidence verification layer (`verifiers.py`), cross-task asset snapshot memory (`memory.py`), and the local web console (`dashboard.py`, loopback only). Architecture and operating details: see `CLAUDE.md` and `docs/`.
 
 
 ---
@@ -618,11 +577,11 @@ AI Agent: "Thank you for clarifying ownership and intent. To proceed with a pene
 
 1. **MCP Connection Failed**:
    ```bash
-   # Check if server is running
-   netstat -tlnp | grep 8888
-   
-   # Restart server
-   python3 hexstrike_server.py
+   # Check the MCP process is running
+   ps -eo pid,args | grep '[h]exstrike_mcp.py'
+
+   # Restart the MCP service (stdio)
+   ./hexstrike-env/bin/python3 hexstrike_mcp.py
    ```
 
 2. **Security Tools Not Found**:
@@ -635,17 +594,16 @@ AI Agent: "Thank you for clarifying ownership and intent. To proceed with a pene
 
 3. **AI Agent Cannot Connect**:
    ```bash
-   # Verify MCP configuration paths
-   # Check server logs for connection attempts
-   python3 hexstrike_mcp.py --debug
+   # Verify the user-scope MCP config exists (~/.claude.json -> mcpServers.hexstrike-ai)
+   # and that `claude` can reach it; then restart the MCP service
+   ./hexstrike-env/bin/python3 hexstrike_mcp.py
    ```
 
 ### Debug Mode
 
-Enable debug mode for detailed logging:
+Run the MCP service in the foreground to watch its stdio logs:
 ```bash
-python3 hexstrike_server.py --debug
-python3 hexstrike_mcp.py --debug
+./hexstrike-env/bin/python3 hexstrike_mcp.py
 ```
 
 ---
@@ -691,8 +649,8 @@ source hexstrike-dev/bin/activate
 # 3. Install development dependencies
 pip install -r requirements.txt
 
-# 4. Start development server
-python3 hexstrike_server.py --port 8888 --debug
+# 4. Run the MCP service in development
+./hexstrike-env/bin/python3 hexstrike_mcp.py
 ```
 
 ### Priority Areas for Contribution
@@ -749,7 +707,7 @@ MIT License - see LICENSE file for details.
 
 ### **📊 Project Statistics**
 
-- **150+ Security Tools** - Comprehensive security testing arsenal
+- **67 Security Tools** - Command templates in `tools/*.json` (see `tools/`)
 - **12+ AI Agents** - Autonomous decision-making and workflow management
 - **4000+ Vulnerability Templates** - Nuclei integration with extensive coverage
 - **35+ Attack Categories** - From web apps to cloud infrastructure
@@ -764,6 +722,6 @@ MIT License - see LICENSE file for details.
 
 **Made with ❤️ by the cybersecurity community for AI-powered security automation**
 
-*HexStrike AI v6.0 - Where artificial intelligence meets cybersecurity excellence*
+*HexStrike AI v7.0 - Where artificial intelligence meets cybersecurity excellence*
 
 </div>

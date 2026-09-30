@@ -6,16 +6,18 @@
 - 资产增删改/合并/标签、报告导出、活动日志（mono 事件流）
 数据来自 memory.AssetSnapshot；执行复用 verifiers / hexstrike_mcp.HexStrikeClient。
 界面风格：审计作战室 ——「界面即命令」，动作即可复现命令事件行。
-仅绑 127.0.0.1；扫描/验证会对目标真实发请求，仅用于已授权目标。
+仅绑 127.0.0.1；扫描/验证会对目标真实发请求。
 """
 
 import json
 import os
 import re
+import shlex
 import signal
 import socket
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 import urllib.parse
@@ -122,6 +124,29 @@ textarea{resize:vertical;min-height:64px}
 .toast.show{opacity:1;transform:none}
 .footer{display:flex;gap:10px;margin-top:14px}
 .err{color:var(--serious);font-size:12px;font-family:var(--mono)}
+#skillMenu{position:fixed;z-index:20;min-width:240px;max-width:340px;max-height:300px;overflow:auto;
+  background:var(--surface,#181a1f);border:1px solid var(--line,#2a2d33);border-radius:8px;
+  box-shadow:0 8px 28px rgba(0,0,0,.45);font-size:12.5px;color:var(--ink,#e6e8ec)}
+#skillMenu .sm{padding:6px 10px;cursor:pointer;border-bottom:1px solid var(--line,#202328);display:flex;flex-wrap:wrap;gap:2px 8px;align-items:baseline}
+#skillMenu .sm .smn{font-size:12.5px;flex:1 1 auto}
+#skillMenu .sm .sms{margin-left:auto;color:var(--ink3,#7a7e87);font-size:10px;font-family:var(--mono);text-transform:uppercase}
+#skillMenu .sm .smd{flex-basis:100%;font-size:10.5px;color:var(--ink3,#7a7e87);line-height:1.35;margin-top:1px}
+#skillMenu .sm:hover{background:var(--acc,#4e7dff);color:#fff}
+#skillMenu .sm.sel{background:var(--acc,#4e7dff);color:#fff}
+#skillMenu .smh{padding:4px 10px;font-size:10px;color:var(--ink3,#7a7e87);text-transform:uppercase;
+  letter-spacing:.4px;background:var(--surface2,#202328);border-bottom:1px solid var(--line,#202328);position:sticky;top:0}
+#uxModal{position:fixed;inset:0;z-index:21;background:rgba(0,0,0,.55);align-items:flex-start;justify-content:center;padding:40px 16px}
+#uxModal[hidden]{display:none!important}
+#uxModal:not([hidden]){display:flex}
+.uxm{width:min(760px,94vw);max-height:80vh;display:flex;flex-direction:column;background:var(--surface,#181a1f);
+  border:1px solid var(--line,#2a2d33);border-radius:10px;box-shadow:0 12px 40px rgba(0,0,0,.5)}
+.uxh{display:flex;justify-content:space-between;align-items:center;padding:10px 14px;border-bottom:1px solid var(--line,#202328)}
+.uxb{padding:12px 14px;overflow:auto}
+.uxrow{display:flex;gap:10px;padding:8px 10px;border-bottom:1px solid var(--line,#202328);cursor:pointer;align-items:flex-start}
+.uxrow:hover{background:var(--surface2,#202328)}
+.uxrow .px{font-family:var(--mono);font-size:10.5px;color:var(--ink3,#7a7e87);word-break:break-all;margin-top:2px}
+.uxpre{white-space:pre-wrap;word-break:break-word;font-family:var(--mono);font-size:11.5px;background:var(--surface2,#202328);
+  padding:10px;border-radius:6px;max-height:380px;overflow:auto}
 </style>
 </head>
 <body><div class="wrap">
@@ -141,12 +166,38 @@ textarea{resize:vertical;min-height:64px}
     <div class="hint">支持 扫描 / 验证 / 加标签 / 删除 / 合并 / 报告 / 统计</div>
     <label for="agoal" style="margin-top:14px">自主任务 — 交给 Claude Agent（多轮规划）</label>
     <div style="display:flex;gap:8px">
-      <input id="agoal" placeholder="对 https://example.com 做侦查，验证 xss，写快照并总结">
+      <input id="agoal" placeholder="对 https://example.com 做侦查… 或 /neat-freak 整理文档；可加 --model opus">
       <button class="btn ghost" id="ago" style="flex:none">🧠 Agent 执行</button>
     </div>
-    <div class="hint">Claude 自助调 hexstrike 工具规划执行（headless）。目标仅限授权。</div>
+    <div class="hint">整段 = claude 命令行：支持 /技能名、--model/--max-turns 等 flag、其余为 prompt。类别词：/skills /mcp /tools /plugin /cmd（/mcp 显示服务器）</div>
+    <label id="auseWrap" style="display:flex;gap:10px;align-items:center;margin-top:8px;padding:9px 11px;border:1px solid var(--line);border-radius:6px;cursor:pointer;user-select:none;background:var(--surface)">
+      <input type="checkbox" id="ause" style="width:16px;height:16px;accent-color:var(--acc);flex:none">
+      <span style="font-size:12.5px;color:var(--ink);line-height:1.45">接着上一个任务继续
+        <span style="display:block;color:var(--ink2);font-size:11px;line-height:1.4">不勾＝从零开新会话（只读快照兜底）；勾上＝追加到最近一次 agent 会话，记得此前全部步骤</span>
+      </span>
+    </label>
+    <div style="display:flex;gap:8px;margin-top:8px;align-items:center">
+      <label for="amodel" style="flex:none;margin:0">模型</label>
+      <select id="amodel">
+        <option value="">默认</option>
+        <option value="opus">opus（最强）</option>
+        <option value="sonnet">sonnet（均衡）</option>
+        <option value="haiku">haiku（快）</option>
+      </select>
+      <label style="display:flex;gap:6px;align-items:center;margin:0;cursor:pointer">
+        <input type="checkbox" id="afence" style="width:15px;height:15px;accent-color:var(--acc)">
+        <span style="font-size:12px">工具白名单</span>
+      </label>
+    </div>
+    <input id="atools" placeholder="逗号分隔，如 Bash,Read,Write,mcp__hexstrike-ai__query_assets" disabled style="margin-top:6px">
+    <div class="hint">勾选工具白名单 → 注入 --allowedTools（名单外工具拒绝，拒绝记录进日志）</div>
+    <div id="agentCtl" style="display:none;gap:8px;margin-top:8px;align-items:center">
+      <button class="btn ghost" id="aint" style="flex:none">⏸ 中断</button>
+      <input id="aadj" placeholder="调整指令（留空＝继续）" style="flex:1;min-width:0">
+      <button class="btn ghost" id="ares" style="flex:none">▶ 继续</button>
+    </div>
     <hr style="border:none;border-top:1px solid var(--line);margin:14px 0 2px">
-    <label for="tgt">目标（URL / 域名 / IP，仅授权目标）</label>
+    <label for="tgt">目标（URL / 域名 / IP）</label>
     <input id="tgt" placeholder="https://host / host:port" value="">
     <div class="opts">
       <label for="ftype">扫描类型</label>
@@ -156,12 +207,15 @@ textarea{resize:vertical;min-height:64px}
       </select>
     </div>
     <div id="scanOpts">
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
-        <div><label for="sev">severity</label><input id="sev" placeholder="high,medium" value=""></div>
-        <div><label for="tags">tags</label><input id="tags" placeholder="xss,sqli" value=""></div>
+      <button type="button" class="btn ghost small" id="advTgl" style="margin:6px 0">高级选项 ▸</button>
+      <div id="advOpts" hidden>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+          <div><label for="sev">severity</label><input id="sev" placeholder="high,medium" value=""></div>
+          <div><label for="tags">tags</label><input id="tags" placeholder="xss,sqli" value=""></div>
+        </div>
+        <label for="tmpl">template（-t，可选）</label><input id="tmpl" placeholder="/path/template.yaml">
+        <label for="extra">additional args</label><input id="extra" placeholder="-rl 20">
       </div>
-      <label for="tmpl">template（-t，可选）</label><input id="tmpl" placeholder="/path/template.yaml">
-      <label for="extra">additional args</label><input id="extra" placeholder="-rl 20">
     </div>
     <div id="verifyOpts" hidden>
       <label for="fjs">findings（JSON 数组 / JSONL）</label>
@@ -203,6 +257,11 @@ textarea{resize:vertical;min-height:64px}
 </main>
 </div>
 <div class="toast" id="toast"></div>
+<div id="skillMenu" hidden></div>
+<div id="uxModal" hidden><div class="uxm">
+  <div class="uxh"><b id="uxTitle">面板</b><button class="btn ghost small" id="uxClose">✕</button></div>
+  <div class="uxb" id="uxBody"></div>
+</div></div>
 
 <script>
 const RL={critical:"严重",high:"高危",medium:"中危",low:"低危",normal:"正常",unassessed:"未评估"};
@@ -216,6 +275,11 @@ function toast(msg){const t=$("toast");t.textContent=msg;t.classList.add("show")
 function log(cls,msg){const l=$("log");const ln=document.createElement("div");ln.className="ln";
   ln.innerHTML=`<span class="t">${new Date().toTimeString().slice(0,8)}</span><span class="${cls}">${esc(msg)}</span>`;
   l.appendChild(ln);l.scrollTop=l.scrollHeight;}
+function setBusy(b){$("go").disabled=b;$("ago").disabled=b;$("nlpGo").disabled=b;$("stop").disabled=!b;}
+function startPoll(){clearInterval(pollT);pollT=setInterval(poll,900);}
+function jobHead(j){return `<div class="ln"><span class="t">▶ 当前任务</span>
+  <span class="${j.kind==="agent"?"ac":"ok"}">${esc(j.kind)} ${esc(j.job_id)} · ${esc(j.status)}</span>
+  ${j.session_id?`<span class="cmd">会话 ${esc(j.session_id)}</span>`:""}</div>`;}
 async function api(path,opts){const r=await fetch(path,opts);const j=await r.json();
   if(!r.ok)throw new Error(j.error||("HTTP "+r.status));return j;}
 function riskBadge(r){return `<span class="badge" style="color:${RC[r]};border-color:${RC[r]}"><span class="dotb" style="background:${RC[r]}"></span>${RL[r]}</span>`;}
@@ -253,16 +317,19 @@ $("rows").addEventListener("click",e=>{
 function selectedKeys(){return [...document.querySelectorAll(".chk:checked")].map(c=>c.value);}
 $("ftype").addEventListener("change",()=>{
   const v=$("ftype").value; $("scanOpts").hidden=v!=="scan"; $("verifyOpts").hidden=v!=="verify";});
+$("advTgl").addEventListener("click",()=>{const o=$("advOpts"),b=$("advTgl");
+  o.hidden=!o.hidden;b.textContent=o.hidden?"高级选项 ▸":"高级选项 ▾";});
 $("stop").addEventListener("click",async()=>{if(curJob){await api("/api/jobs/"+curJob+"/cancel",{method:"POST"});}});
 $("go").addEventListener("click",runCmd);
 $("nlpGo").addEventListener("click",async()=>{
   const t=$("nlpInput").value.trim();if(!t)return toast("输入指令");
+  if($("go").disabled)return toast("上一个任务还在跑，先完成或停止它");
   try{
     const r=await api("/api/nlp",{method:"POST",headers:{"Content-Type":"application/json"},
       body:JSON.stringify({text:t})});
     if(r.error){log("err",r.error);return toast(r.error);}
     if(r.job_id){curJob=r.job_id;log("ac","指令 → "+r.kind+" "+r.job_id);
-      $("go").disabled=true;$("stop").disabled=false;pollT=setInterval(poll,900);await poll();}
+      setBusy(true);startPoll();await poll();}
     else if(r.ok){toast(r.message||"完成");log("ok",r.message||"完成");
       if(r.stats)log("ok",`资产 ${r.stats.total_assets} · 确认漏洞 ${r.stats.total_confirmed} · 待复核 ${r.stats.pending_review}`);
       loadAssets();}
@@ -271,13 +338,27 @@ $("nlpGo").addEventListener("click",async()=>{
 });
 $("ago").addEventListener("click",async()=>{
   const g=$("agoal").value.trim();if(!g)return toast("输入任务目标");
+  if($("go").disabled)return toast("上一个任务还在跑，先完成或停止它");
   try{
     const r=await api("/api/jobs",{method:"POST",headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({type:"agent",goal:g})});
-    curJob=r.job_id;log("ac","🧠 已交给 Claude Agent "+r.job_id);
-    $("go").disabled=true;$("stop").disabled=false;pollT=setInterval(poll,900);await poll();
+      body:JSON.stringify({type:"agent",goal:g,resume_session:$("ause").checked?"last":"",
+        model:agentModel(),fence:agentFence()})});
+    if(r.error)return toast(r.error);
+    curJob=r.job_id;log("ac","🧠 已交给 Claude Agent "+r.job_id+($("ause").checked?"（续上一会话）":""));
+    setBusy(true);startPoll();await poll();
   }catch(e){log("err",e.message);}
 });
+function agentModel(){return $("amodel").value;}
+function agentFence(){return $("afence").checked?($("atools").value||"").trim():"";}
+$("afence").addEventListener("change",()=>{$("atools").disabled=!$("afence").checked;});
+$("aint").addEventListener("click",async()=>{if(!curJob)return;
+  try{await api("/api/jobs/"+curJob+"/interrupt",{method:"POST"});toast("已中断，可输入调整后继续");}
+  catch(e){toast("失败："+e.message);}});
+$("ares").addEventListener("click",async()=>{if(!curJob)return;
+  const text=$("aadj").value.trim();
+  try{await api("/api/jobs/"+curJob+"/resume",{method:"POST",headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({text,model:agentModel(),fence:agentFence()})});$("aadj").value="";toast("已继续");}
+  catch(e){toast("失败："+e.message);}});
 $("exp").addEventListener("click",()=>{const a=document.createElement("a");
   a.href="/api/report?full=1&download=1";a.download="hexstrike-report.md";document.body.appendChild(a);a.click();a.remove();
   log("ok","报告已导出");});
@@ -300,23 +381,207 @@ async function runCmd(){
   if(type==="scan"){body.target=tgt;if(!tgt)return toast("填目标");body.severity=$("sev").value.trim();body.tags=$("tags").value.trim();
     body.template=$("tmpl").value.trim();body.additional_args=$("extra").value.trim();}
   else{const js=$("fjs").value.trim();if(!js)return toast("填 findings JSON");body.findings_json=js;}
-  $("go").disabled=true;$("stop").disabled=false;
+  setBusy(true);
   const j=await api("/api/jobs",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
   curJob=j.job_id;log("ac","已提交 "+j.kind+" "+j.job_id);
-  pollT=setInterval(poll,900);
+  startPoll();
   await poll();
 }
 async function poll(){
   try{const j=await api("/api/jobs/"+curJob);
-    $("log").innerHTML=j.log.join("<br>");
+    $("log").innerHTML=jobHead(j)+j.log.join("<br>");
     $("log").scrollTop=$("log").scrollHeight;
-    if(j.status==="done"){clearInterval(pollT);$("go").disabled=false;$("stop").disabled=true;
+    updateAgentCtl(j);
+    if(j.status==="done"){clearInterval(pollT);pollT=null;setBusy(false);
+      updateAgentCtl(j);
       if(j.result){log("ok","完成 — "+(j.result.total||0)+" finding，已复现 "+(j.result.confirmed||0)
          +"，未复现 "+(j.result.refuted||0)+"，待复核 "+(j.result.unverifiable||0));}
       loadAssets();curJob=null;}
-    else if(j.status==="error"){clearInterval(pollT);$("go").disabled=false;$("stop").disabled=true;curJob=null;}
-  }catch(e){clearInterval(pollT);$("go").disabled=false;$("stop").disabled=true;curJob=null;log("err",e.message);}
+    else if(j.status==="error"||j.status==="cancelled"){clearInterval(pollT);pollT=null;setBusy(false);curJob=null;}
+  }catch(e){clearInterval(pollT);pollT=null;setBusy(false);
+    $("agentCtl").style.display="none";curJob=null;log("err",e.message);}
 }
+function updateAgentCtl(j){
+  const ctl=$("agentCtl");
+  if(j.kind==="agent"){ctl.style.display="flex";
+    $("aint").disabled=j.status!=="running";$("ares").disabled=j.status!=="paused";}
+  else ctl.style.display="none";
+}
+let MENU=[],skillCtx=null;
+async function loadMenu(){try{const r=await api("/api/menu");MENU=r.items||[];}catch(e){}}
+function tokSplit(v){const sp=v.lastIndexOf(" ");return [v.slice(0,sp+1),v.slice(sp+1)];}
+function skillMenuHide(){const m=$("skillMenu");m.hidden=true;skillCtx=null;}
+function attachSkill(id){const el=$(id);
+  el.addEventListener("input",()=>{const [pre,tok]=tokSplit(el.value);
+    tok.startsWith("/")?skillMenuShow(el,pre,tok.slice(1)):skillMenuHide();});
+  el.addEventListener("blur",()=>setTimeout(skillMenuHide,180));
+  el.addEventListener("keydown",e=>{
+    if($("skillMenu").hidden)return;
+    if(e.key==="Enter"){const s=$("skillMenu").querySelector(".sel");if(s){e.preventDefault();skillPick(s);}}
+    else if(e.key==="Escape"){e.preventDefault();skillMenuHide();}
+    else if(e.key==="ArrowDown"||e.key==="ArrowUp"){e.preventDefault();skillNav(e.key==="ArrowDown"?1:-1);}
+  });
+}
+function skillRow(it){
+  const badge=it.kind==="mcp"?"mcp":(it.kind==="mcp-server"?"server":(it.source||""));
+  const label=it.kind==="mcp-server"?"mcp__"+it.name+"__":it.label;
+  const d=it.desc?`<span class="smd">${esc(it.desc)}</span>`:"";
+  return `<div class="sm" data-kind="${it.kind}" data-name="${esc(it.name)}"><span class="smn">${esc(label)}</span><span class="sms">${esc(badge)}</span>${d}</div>`;
+}
+const CAT_KEYS={skill:"skill",skills:"skill",技能:"skill",
+  mcp:"mcp",plugin:"plugin",plugins:"plugin",插件:"plugin",
+  cmd:"cmd",command:"cmd",commands:"cmd",命令:"cmd",
+  tools:"tools",tool:"tools",工具:"tools"};
+function skillMenuShow(el,pre,q){
+  const ql=q.toLowerCase();
+  const m=$("skillMenu");
+  const cat=CAT_KEYS[ql];
+  const skillAll=MENU.filter(it=>it.kind==="skill");
+  let rows;
+  if(cat==="skill"){
+    rows=[["技能清单",skillAll,80]];
+  }else if(cat==="mcp"){
+    // TUI 语义：/mcp 显示的是 MCP 服务器（会话连接），不是单个工具
+    const servers=[{name:"hexstrike-ai",kind:"mcp-server",label:"hexstrike-ai"}]
+      .concat(MENU.filter(it=>it.kind==="mcp-server"));
+    rows=[["MCP 服务器（会话内连接）",servers,10]];
+  }else if(cat==="tools"){
+    rows=[["MCP 工具（mcp__hexstrike-ai__）",MENU.filter(it=>it.kind==="mcp"),80]];
+  }else if(cat==="plugin"){
+    rows=[["插件技能",skillAll.filter(s=>s.source==="plugin"),60],
+          ["其它技能",skillAll.filter(s=>s.source!=="plugin"),20]];
+  }else if(cat==="cmd"){
+    rows=[["命令",MENU.filter(it=>it.kind==="cmd"),30]];
+  }else if(ql===""){
+    rows=[["技能 / 插件",skillAll,40],["命令",MENU.filter(it=>it.kind==="cmd"),12]];
+  }else{
+    const hits=MENU.filter(it=>it.kind!=="mcp-server"&&it.kind!=="mcp" &&
+      (it.name+" "+it.label).toLowerCase().includes(ql));
+    rows=[["命令",hits.filter(it=>it.kind==="cmd"),12],
+          ["技能 / 插件",hits.filter(it=>it.kind==="skill"),20]];
+  }
+  let html="",total=0;
+  for(const [title,list,cap] of rows){
+    if(!list.length)continue;
+    html+=`<div class="smh">${title}（${list.length}）</div>`;
+    html+=list.slice(0,cap).map(skillRow).join("");
+    total+=Math.min(list.length,cap);
+    if(list.length>cap)html+=`<div class="smh" style="text-transform:none">… 还有 ${list.length-cap} 个</div>`;
+  }
+  if(!total){m.hidden=true;skillCtx=null;return;}
+  m.innerHTML=html;
+  skillCtx={el,pre};
+  const first=m.querySelector(".sm"); if(first)first.classList.add("sel");
+  const r=el.getBoundingClientRect();
+  m.style.left=Math.min(r.left,window.innerWidth-420)+"px";
+  m.style.top=Math.min(r.bottom+4,window.innerHeight-320)+"px";
+  m.hidden=false;
+  m.querySelectorAll(".sm").forEach(d=>{
+    d.addEventListener("mousedown",ev=>{ev.preventDefault();skillPick(d);});
+    d.addEventListener("mouseover",()=>{m.querySelectorAll(".sm").forEach(x=>x.classList.remove("sel"));d.classList.add("sel");});
+  });
+}
+function skillNav(d){
+  const items=[...$("skillMenu").querySelectorAll(".sm")];
+  const i=items.findIndex(x=>x.classList.contains("sel"));
+  if(i<0)return;
+  items[i].classList.remove("sel");
+  const j=(i+d+items.length)%items.length;
+  items[j].classList.add("sel");items[j].scrollIntoView({block:"nearest"});
+}
+function skillPick(d){
+  const ctx=skillCtx;if(!ctx)return;
+  const k=d.dataset.kind,name=d.dataset.name;
+  if(k==="cmd"){skillMenuHide();openPanel(name);return;}
+  const insert=k==="mcp"?"mcp__hexstrike-ai__"+name+" "
+              :k==="mcp-server"?"mcp__"+name+"__"
+              :"/"+name+" ";
+  const v=ctx.pre+insert;
+  ctx.el.value=v;ctx.el.focus();ctx.el.setSelectionRange(v.length,v.length);
+  skillMenuHide();
+}
+function renderMcp(){
+  const b=$("uxBody");
+  api("/api/mcp").then(r=>{
+    b.innerHTML=`<div class="hint" style="margin:0 0 8px">会话级开关：控制「控制台发起的 agent」连哪些服务器（不影响当前 Claude 会话）。hexstrike-ai 为平台必需。</div>`
+      + r.servers.map(s=>{
+        const tgl=s.locked
+          ? `<span class="badge" style="color:#0ca30c;border-color:#0ca30c">必需</span>`
+          : `<button class="btn ghost small" data-tgl="${esc(s.name)}" data-on="${s.enabled}">${s.enabled?"● 已启用":"○ 已停用"}</button>`;
+        return `<div class="uxrow" style="cursor:default"><div style="flex:1"><b>${esc(s.name)}</b>
+          <div class="px">${esc(s.type||"")} · ${esc(s.command||"")} ${esc(s.args||"")}</div></div>
+          <span class="mono" style="font-size:11px">${s.tools?s.tools+" 工具":""}</span>${tgl}</div>`;
+      }).join("");
+    b.querySelectorAll("button[data-tgl]").forEach(bt=>bt.addEventListener("click",ev=>{
+      ev.stopPropagation();
+      api("/api/mcp/toggle",{method:"POST",headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({name:bt.dataset.tgl,enabled:bt.dataset.on!=="true"})})
+        .then(renderMcp).catch(err=>toast(err.message));
+    }));
+  }).catch(e=>b.innerHTML="<div class='err'>"+esc(e.message)+"</div>");
+}
+function openPanel(kind){
+  const m=$("uxModal"),b=$("uxBody");
+  b.innerHTML='<div class="cmd" style="text-align:center;padding:20px">载入中…</div>';m.hidden=false;
+  if(kind==="mcp"){ $("uxTitle").textContent="MCP 服务器"; renderMcp(); return; }
+  if(kind==="skills"){ $("uxTitle").textContent="技能"; renderSkillsPanel(); return; }
+  api("/api/panel/"+kind).then(renderPanel).catch(e=>b.innerHTML="<div class='err'>"+esc(e.message)+"</div>");
+}
+function renderSkillsPanel(){
+  const b=$("uxBody");
+  api("/api/skills").then(r=>{
+    b.innerHTML=r.skills.map(s=>{
+      const act=s.path
+        ? `<span class="cmd" style="flex:none;color:var(--acc,#4e7dff)">查看 ▸</span>`
+        : `<span class="cmd" style="flex:none;color:var(--ink3,#7a7e87)">内置（无文件）</span>`;
+      return `<div class="uxrow" data-skill="${esc(s.name)}" data-path="${esc(s.path)}">
+      <div style="flex:1"><b>${esc(s.name)}</b> <span class="sms">${esc(s.source)}</span>
+      ${s.desc?`<div class="cmd" style="font-size:11.5px;color:var(--ink2)">${esc(s.desc)}</div>`:""}
+      <div class="px">${esc(s.path)}</div></div>${act}</div>`;
+    }).join("")
+      + "<div id='uxpreview'></div>";
+    b.querySelectorAll(".uxrow").forEach(d=>{if(d.dataset.path)d.addEventListener("click",()=>previewSkill(d.dataset.skill));});
+  }).catch(e=>b.innerHTML="<div class='err'>"+esc(e.message)+"</div>");
+}
+function renderPanel(r){
+  const b=$("uxBody");
+  $("uxTitle").textContent=r.title||"面板";
+  if(r.kind==="model"){
+    b.innerHTML=r.options.map(o=>{
+      const cur=o.name===$("amodel").value?"<span class='sms'>当前</span>":"";
+      return `<div class="uxrow" data-model="${esc(o.name)}"><div style="flex:1"><b>${esc(o.name||"默认")}</b> ${cur}<div class="px">${esc(o.desc)}</div></div></div>`;
+    }).join("");
+    b.querySelectorAll(".uxrow").forEach(d=>d.addEventListener("click",()=>{$("amodel").value=d.dataset.model;toast("已选模型 "+(d.dataset.model||"默认"));renderPanel(r);}));
+    return;
+  }
+  if(r.kind==="action"){
+    let extra="";
+    if(r.action==="clear")extra=`<button class="btn ghost small" id="pact">重开新会话（不续上一会话）</button>`;
+    else if(r.action==="resume")extra=`<button class="btn ghost small" id="pact">勾选「🔗 续上一会话」</button>`;
+    b.innerHTML=`<div class="uxrow" style="cursor:default"><div style="flex:1">${esc(r.desc)}</div></div><div style="margin-top:10px">${extra}</div>`;
+    const bt=$("pact");
+    if(bt)bt.addEventListener("click",()=>{
+      if(r.action==="clear")$("ause").checked=false;
+      else if(r.action==="resume")$("ause").checked=true;
+      toast("已执行");$("uxModal").hidden=true;
+    });
+    return;
+  }
+  b.innerHTML=(r.hint?`<div class="hint" style="margin:0 0 8px">${esc(r.hint)}</div>`:"")
+    + ((r.items||[]).map(it=>`<div class="uxrow" style="cursor:default"><div style="flex:1"><b>${esc(it.name)}</b>${it.desc?`<div class="px">${esc(it.desc)}</div>`:""}</div></div>`).join("")
+       || "<div class='cmd'>无内容</div>");
+}
+function previewSkill(name){
+  const p=$("uxpreview");p.textContent="载入中…";
+  api("/api/skill/read?name="+encodeURIComponent(name)).then(r=>{
+    p.innerHTML=`<div class="px">${esc(r.path)}</div><pre class="uxpre">${esc(r.content)}</pre>`;
+  }).catch(e=>{p.innerHTML="<div class='err'>读取失败："+esc(e.message)+"</div>";});
+}
+$("uxClose").addEventListener("click",()=>{$("uxModal").hidden=true;});
+$("uxModal").addEventListener("click",e=>{if(e.target===$("uxModal"))$("uxModal").hidden=true;});
+document.addEventListener("keydown",e=>{if(e.key==="Escape"){$("skillMenu").hidden=true;$("uxModal").hidden=true;}});
+loadMenu();
+["agoal","aadj","nlpInput"].forEach(attachSkill);
 loadAssets();
 </script>
 </body></html>"""
@@ -329,16 +594,19 @@ class Job:
         self.job_id = job_id
         self.kind = kind
         self.label = label
-        self.status = "running"   # running / done / error / cancelled
+        self.status = "running"   # running / paused / done / error / cancelled
         self.log = []
         self.result = None
         self.error = ""
+        self.session_id = ""      # agent：claude 会话 id（首跑 --session-id，续跑 --resume）
+        self.proc = None          # agent：当前 claude 子进程（可中断）
 
 
 class _Jobs:
     def __init__(self):
         self.store = {}
         self.lock = threading.Lock()
+        self.last_agent = None       # 最近一次 agent job（供「续上一会话」）
 
     def create(self, kind, label):
         with self.lock:
@@ -350,9 +618,18 @@ class _Jobs:
     def get(self, jid):
         return self.store.get(jid)
 
+    def active_job(self):
+        """单任务模型：任一 running/paused 的 job 都算活动任务，阻塞新任务。"""
+        for j in self.store.values():
+            if j.status in ("running", "paused"):
+                return j
+        return None
+
     def render(self, job):
         return {"job_id": job.job_id, "kind": job.kind, "status": job.status,
-                "log": job.log, "result": job.result, "error": job.error}
+                "log": job.log, "result": job.result, "error": job.error,
+                "session_id": job.session_id,
+                "resumable": bool(job.kind == "agent" and job.session_id)}
 
 
 def _client():
@@ -372,13 +649,506 @@ def _ts():
     return __import__("datetime").datetime.now().strftime("%H:%M:%S")
 
 
-def _run_agent_job(job, params):
-    """把目标交给 Claude agent（headless `claude -p`）复用现有 agent 框架。
+# ---- 自主任务：把输入框当 claude 命令行 + /技能 预处理器 ----
 
-    `claude -p` 加载同一套 hexstrike MCP 工具（user scope），自我规划、调用
-    工具、写快照，与当前会话同一模型链路。事件流经 stream-json 转成前端日志。
+# 取值型 flag：它的下一个 token 是值（也支持 --flag=val 一体形式）
+_AGENT_VALUE_FLAGS = {
+    "--model", "--mode", "--append-system-prompt", "--append-system-prompt-file",
+    "--system-prompt", "--system-prompt-file", "--add-dir", "--allowedTools",
+    "--allowed-tools", "--disallowedTools", "--disallowed-tools", "--mcp-config",
+    "--settings", "--agents", "--plugin-dir", "--permission-mode", "--max-turns",
+    "--timeout-ms", "--output-format", "--fallback-model", "--input-format",
+    "--add-cwd", "--expert", "--provider", "--env", "--api-key-helper", "--fallback",
+}
+
+
+def _split_agent_flags(text):
+    """把「自主任务」文本拆成 (flags, prompt)：
+    flags 须在 prompt 之前；`--flag val` / `--flag=val` 识别为 claude 参数，
+    首个非 flag 词及其后视为 prompt。纯文本输入 → ([], 全文)。"""
+    try:
+        toks = shlex.split(text)
+    except ValueError:
+        toks = (text or "").split()
+    if toks and toks[0] == "claude":
+        toks = toks[1:]
+    args, i, n = [], 0, len(toks)
+    while i < n:
+        t = toks[i]
+        if not t.startswith("-"):
+            return args, " ".join(toks[i:])
+        args.append(t)
+        if "=" not in t and t in _AGENT_VALUE_FLAGS and i + 1 < n and not toks[i + 1].startswith("-"):
+            args.append(toks[i + 1])
+            i += 1
+        i += 1
+    return args, ""
+
+
+def _drop_flag(flags, name):
+    """移除 flags 里的裸 flag（连同相邻值 token）与 --name=val 一体形式。"""
+    out, i = [], 0
+    while i < len(flags):
+        t = flags[i]
+        if t == name:
+            if i + 1 < len(flags) and not flags[i + 1].startswith("-"):
+                i += 1
+            i += 1
+            continue
+        if t.startswith(name + "="):
+            i += 1
+            continue
+        out.append(t)
+        i += 1
+    return out
+
+
+def _flag_value(flags, name, default=None):
+    """取首个 `--name val` / `--name=val` 的值。"""
+    for i, t in enumerate(flags):
+        if t == name and i + 1 < len(flags):
+            return flags[i + 1]
+        if t.startswith(name + "="):
+            return t.split("=", 1)[1]
+    return default
+
+
+def _fence_list(s):
+    return [x.strip() for x in (s or "").split(",") if x.strip()]
+
+
+# 内置/随 CLI 分发的技能（无本地 SKILL.md，走 Skill 工具）
+_BUILTIN_SKILLS = sorted(set([
+    "frontend-design:frontend-design", "dataviz", "update-config", "keybindings-help",
+    "code-review", "simplify", "fewer-permission-prompts", "loop", "claude-api",
+    "workflow-authoring", "run", "init", "security-review",
+]))
+
+
+def _skill_desc(path):
+    """从 SKILL.md frontmatter 取 description（支持行内与 YAML `>`/`|` 折叠块）。"""
+    try:
+        with open(path, encoding="utf-8") as f:
+            head = f.read(2000)
+    except OSError:
+        return ""
+    if not head.startswith("---"):
+        return ""
+    end = head.find("\n---", 3)
+    lines = head[: end if end != -1 else len(head)].splitlines()
+    for i, ln in enumerate(lines):
+        m = re.match(r"^\s*description:\s*(.*)$", ln)
+        if not m:
+            continue
+        val = m.group(1).strip()
+        if val and val not in ("|", ">", "|-", ">-"):
+            return val.strip('"').strip("'")
+        # 折叠块：跟后续缩进行合并
+        parts = []
+        for sub in lines[i + 1:]:
+            if sub.startswith(("#", " ", "\t")) and sub.strip():
+                parts.append(sub.strip())
+            elif not sub.strip():
+                continue
+            else:
+                break
+        return " ".join(parts).strip()
+    return ""
+
+
+def _list_skills():
+    """枚举可调用技能（含 frontmatter 描述）：用户级 / 项目级 / 插件市场 + 内置。"""
+    out, seen = [], set()
+    home = os.path.expanduser("~")
+    base = os.path.dirname(os.path.abspath(__file__))
+
+    def add(path, nm, source):
+        if nm in seen:
+            return
+        seen.add(nm)
+        out.append({"name": nm, "source": source, "desc": _skill_desc(path) if path else "",
+                    "path": path or ""})
+
+    for root in (os.path.join(base, ".claude", "skills"),
+                 os.path.join(home, ".claude", "skills")):
+        if not os.path.isdir(root):
+            continue
+        try:
+            names = os.listdir(root)
+        except OSError:
+            continue
+        for nm in names:
+            p = os.path.join(root, nm, "SKILL.md")
+            if os.path.isfile(p):
+                add(p, nm, "user")
+    mp = os.path.join(home, ".claude", "plugins", "marketplaces")
+    if os.path.isdir(mp):
+        for vendor in os.listdir(mp):
+            sp = os.path.join(mp, vendor, "skills")
+            if not os.path.isdir(sp):
+                continue
+            for nm in os.listdir(sp):
+                p = os.path.join(sp, nm, "SKILL.md")
+                if os.path.isfile(p):
+                    add(p, nm, "plugin")
+    for b in _BUILTIN_SKILLS:
+        add(None, b, "builtin")
+    return sorted(out, key=lambda x: x["name"])
+
+
+# TUI 式 `/` 菜单：内置命令（可与模型一起用的等价物）+ 技能/插件 + MCP 工具
+_SLASH_COMMANDS = ["model", "clear", "compact", "mcp", "skills", "permissions", "config",
+                   "resume", "rewind", "memory", "add-dir", "agents"]
+
+
+def _mcp_tool_names():
+    """hexstrike MCP 暴露的工具名（@mcp.tool 函数，与会话可见的 mcp__hexstrike-ai__* 一致）。
+    注意：tools/*.json 的模板名是内部 build 键（如 amass），并非可调用工具名，不入菜单。"""
+    try:
+        import hexstrike_mcp as hm
+        import inspect
+        import re as _re
+        src = inspect.getsource(hm.setup_mcp_server)
+        return sorted(set(_re.findall(r"@mcp\.tool\(\)[\s\S]*?def\s+(\w+)", src)))
+    except Exception:
+        return []
+
+
+def _other_mcp_servers():
+    """~/.claude.json 里除 hexstrike 外的 MCP server（仅列名，工具由会话内连接提供）。"""
+    try:
+        cfg = json.load(open(os.path.join(os.path.expanduser("~"), ".claude.json")))
+        return sorted(k for k in (cfg.get("mcpServers") or {}).keys() if k != "hexstrike-ai")
+    except Exception:
+        return []
+
+
+def _mcp_state():
+    """控制台会话级启用的 MCP 服务器（不写全局 ~/.claude.json）。"""
+    p = os.path.join(os.path.dirname(os.path.abspath(__file__)), "mcp-servers-state.json")
+    try:
+        return json.load(open(p, encoding="utf-8"))
+    except Exception:
+        return {}
+
+
+def _mcp_enabled_servers():
+    """按状态过滤 ~/.claude.json 的 mcpServers：hexstrike-ai 必需，其余默认启用可停用。"""
+    cfg = {}
+    try:
+        cfg = json.load(open(os.path.join(os.path.expanduser("~"), ".claude.json"))).get("mcpServers") or {}
+    except Exception:
+        pass
+    st = _mcp_state()
+    return {n: c for n, c in cfg.items()
+            if c is not None and (n == "hexstrike-ai" or st.get(n, True))}
+
+
+def _mcp_status():
+    """/mcp 面板：列出配置的 MCP 服务器 + 连接/工具/启用状态。hexstrike-ai 是进程内直连。"""
+    out = []
+    cfg = {}
+    try:
+        cfg = json.load(open(os.path.join(os.path.expanduser("~"), ".claude.json")))
+    except Exception:
+        pass
+    servers = dict(cfg.get("mcpServers") or {})
+    base = os.path.dirname(os.path.abspath(__file__))
+    servers.setdefault("hexstrike-ai", {"command": sys.executable,
+                                        "args": [os.path.join(base, "hexstrike_mcp.py")]})
+    hex_names = _mcp_tool_names()
+    st = _mcp_state()
+    for name, conf in servers.items():
+        locked = name == "hexstrike-ai"
+        rec = {"name": name,
+               "connected": name == "hexstrike-ai",
+               "tools": len(hex_names) if name == "hexstrike-ai" else 0,
+               "enabled": locked or st.get(name, True),
+               "locked": locked}
+        if isinstance(conf, dict):
+            rec["command"] = conf.get("command", "")
+            rec["args"] = " ".join(map(str, conf.get("args") or []))[:80]
+            rec["type"] = conf.get("type", "")
+        out.append(rec)
+    return out
+
+
+def _claude_home():
+    return os.path.join(os.path.expanduser("~"), ".claude")
+
+
+def _settings_items():
+    items = []
+    for p in ([os.path.join(os.path.dirname(os.path.abspath(__file__)), ".claude", "settings.json"),
+               os.path.join(os.path.dirname(os.path.abspath(__file__)), ".claude", "settings.local.json"),
+               os.path.join(_claude_home(), "settings.json")]):
+        if os.path.isfile(p):
+            try:
+                n = len(open(p, encoding="utf-8").read())
+            except OSError:
+                n = 0
+            items.append({"name": p, "desc": f"{os.path.basename(p)} · {n} 字符"})
+    return items or [{"name": "未发现 settings.json", "desc": ""}]
+
+
+def _memory_items():
+    cwd = os.path.dirname(os.path.abspath(__file__))
+    memdir = os.path.join(_claude_home(), "projects", cwd.replace(os.sep, "-").replace(".", "-"), "memory")
+    items = []
+    if os.path.isdir(memdir):
+        for fn in sorted(os.listdir(memdir)):
+            if not fn.endswith(".md"):
+                continue
+            p = os.path.join(memdir, fn)
+            try:
+                head = open(p, encoding="utf-8").read()[:120].replace("\n", " ")
+            except OSError:
+                head = ""
+            items.append({"name": fn, "desc": head or "(空)"})
+    return items or [{"name": "尚无项目记忆", "desc": "memory 目录未生成或在别处"}]
+
+
+def _agent_files():
+    items = []
+    for root in (os.path.join(os.path.dirname(os.path.abspath(__file__)), ".claude", "agents"),
+                 os.path.join(_claude_home(), "agents")):
+        if not os.path.isdir(root):
+            continue
+        for fn in sorted(os.listdir(root)):
+            if fn.endswith(".md"):
+                items.append({"name": fn.replace(".md", ""), "desc": os.path.join(root, fn)})
+    return items or [{"name": "未发现 agent 定义", "desc": ".claude/agents/ 或 ~/.claude/agents/ 下无 .md"}]
+
+
+def _claude_dirs():
+    cwd = os.path.dirname(os.path.abspath(__file__))
+    cands = [os.path.join(cwd, "CLAUDE.md"),
+             os.path.join(cwd, ".claude", "CLAUDE.md"),
+             os.path.join(cwd, ".claude", "CLAUDE.local.md"),
+             os.path.join(_claude_home(), "CLAUDE.md")]
+    return [{"name": p, "desc": f"{os.path.getsize(p)} 字符" if os.path.isfile(p) else "不存在"}
+            for p in cands]
+
+
+def _panel(name):
+    """TUI 式面板数据：命令 → {title, kind, ...}。kind: mcp/skills/model/list/action。"""
+    if name == "mcp":
+        return {"title": "MCP 服务器", "kind": "mcp", "servers": _mcp_status()}
+    if name in ("skills", "skill"):
+        return {"title": "技能", "kind": "skills", "skills": _list_skills()}
+    if name == "model":
+        return {"title": "模型", "kind": "model",
+                "options": [{"name": "", "desc": "默认（与当前会话一致）"},
+                            {"name": "opus", "desc": "最强"},
+                            {"name": "sonnet", "desc": "均衡"},
+                            {"name": "haiku", "desc": "快"}]}
+    if name == "permissions":
+        return {"title": "权限", "kind": "list",
+                "hint": "headless agent 默认 --permission-mode bypassPermissions（在输入框文本里可覆盖）；工具白名单在发起前设置。",
+                "items": [{"name": "--permission-mode", "desc": "当前默认 bypassPermissions（可在目标文本里覆盖）"},
+                          {"name": "工具白名单", "desc": "左侧「工具白名单」勾选 + 逗号列表 → 注入 --allowedTools"}]}
+    if name == "config":
+        return {"title": "配置", "kind": "list", "items": _settings_items()}
+    if name == "memory":
+        return {"title": "项目记忆", "kind": "list", "items": _memory_items()}
+    if name == "agents":
+        return {"title": "Agents", "kind": "list", "items": _agent_files()}
+    if name == "add-dir":
+        return {"title": "上下文目录（CLAUDE.md）", "kind": "list", "items": _claude_dirs()}
+    if name == "clear":
+        return {"title": "清空 / 重开", "kind": "action", "action": "clear",
+                "desc": "不续上一会话、重开新会话（等价 /clear）"}
+    if name == "compact":
+        return {"title": "压缩上下文", "kind": "action", "action": "compact",
+                "desc": "续跑时可加 --autocompact，压缩长上下文后继续同会话"}
+    if name == "resume":
+        return {"title": "继续 / 续会话", "kind": "action", "action": "resume",
+                "desc": "复用最近一次 agent 会话继续（等价 /resume，配合「🔗 续上一会话」）"}
+    if name == "rewind":
+        return {"title": "回退", "kind": "action", "action": "rewind",
+                "desc": "headless 无多步回退 UI；用 中断 → 调整 → 继续 达到近似效果"}
+    return None
+
+
+def _menu():
+    items = [{"kind": "cmd", "name": c, "label": "/" + c} for c in _SLASH_COMMANDS]
+    for s in _list_skills():
+        items.append({"kind": "skill", "name": s["name"], "source": s["source"],
+                      "label": "/" + s["name"], "desc": s.get("desc", "")})
+    for n in _mcp_tool_names():
+        items.append({"kind": "mcp", "name": n, "label": "mcp__hexstrike-ai__" + n, "server": "hexstrike-ai"})
+    others = _other_mcp_servers()
+    for srv in others:
+        items.append({"kind": "mcp-server", "name": srv, "label": "mcp 服务器: " + srv, "server": srv})
+    return items
+
+
+def _resolve_skill(prompt, cwd=None):
+    """prompt 以 `/技能名 用户补充` 开头 → 定位 SKILL.md → 展开为
+    `--append-system-prompt-file <tmp>` 注入（确定性，不靠模型猜）。
+    支持命名空间 `plugin:skill`、markdowns 子目录布局、插件市场技能目录。
+    返回 (extra_args, new_prompt)；`/xxx` 但技能不存在返回 False。"""
+    m = re.match(r"^/([\w.-]+(?::[\w.-]+)?)(?:\s+(.*))?$", prompt.strip(), re.S)
+    if not m:
+        return None
+    name, rest = m.group(1), (m.group(2) or "").strip()
+    bare = name.split(":")[-1]
+    base = cwd or os.path.dirname(os.path.abspath(__file__))
+    home = os.path.expanduser("~")
+    roots = [os.path.join(base, ".claude", "skills"),
+             os.path.join(home, ".claude", "skills")]
+    hits = []
+    for root in roots:
+        for nm in (name, bare):
+            for cand in (os.path.join(root, nm, "SKILL.md"),
+                         os.path.join(root, nm, "markdowns", nm, "SKILL.md")):
+                if os.path.isfile(cand):
+                    hits.append(cand)
+    mp = os.path.join(home, ".claude", "plugins", "marketplaces")
+    try:
+        import glob
+        pat = os.path.join(mp, "*", "skills", "*", "SKILL.md")
+        for cand in glob.glob(pat):
+            if os.path.basename(os.path.dirname(cand)) == bare:
+                hits.append(cand)
+    except Exception:
+        pass
+    path = next(iter(hits), None)
+    if not path:
+        return False
+    content = open(path, encoding="utf-8").read()
+    if content.startswith("---"):
+        end = content.find("\n---", 3)
+        if end != -1:
+            content = content[end + 4:].strip("\n")
+    cm = re.search(r"<command[^>]*>(.*?)</command>", content, re.S)
+    body = (cm.group(1) if cm else content).strip()
+    if len(body) > 30000:                       # 防超大技能撑爆 system prompt
+        body = body[:30000] + "\n……（技能正文过长已截断）"
+    if rest:
+        body = body.replace("<args>", rest) if "<args>" in body else body
+    tmp = os.path.join(tempfile.gettempdir(), f"hexdash_skill_{name.replace(':','-')}_{uuid.uuid4().hex[:6]}.md")
+    with open(tmp, "w", encoding="utf-8") as fh:
+        fh.write(f"# 技能：{name}\n\n{body}\n\n按以上技能执行。目标：{rest}\n")
+    return ["--append-system-prompt-file", tmp], rest or f"执行 {name} 技能。"
+
+
+def _build_agent_cmd(session_id, text, resume=False, model="", fence="", suffix=""):
+    """组装 headless `claude -p` 命令：
+    - 文本里的 claude flags 原样透传（`--session-id`/`--resume`/`--output-format` 硬控/接管）；
+    - `/技能` → SKILL.md 确定性注入；model/fence 由控制台控件给值。"""
+    flags, prompt = _split_agent_flags(text)
+    if prompt:
+        skill = _resolve_skill(prompt)
+        if skill:
+            flags += skill[0]
+            prompt = skill[1]
+        elif skill is False:
+            # 本地没有 SKILL.md（内置/插件技能）：不硬报错，保留原文并引导模型
+            # 走 Skill 工具（这是这类技能唯一正确的调用通道）。
+            prompt = ("（技能未能在本地解析成 SKILL.md，请用 Skill 工具调用它执行。）\n"
+                      + prompt)
+    # 会话生命周期由控制台记账：接管 --session-id / --resume / --continue
+    sid = _flag_value(flags, "--session-id")
+    flags = _drop_flag(flags, "--session-id")
+    flags = _drop_flag(flags, "--resume")
+    flags = _drop_flag(flags, "--continue")
+    # 硬控：输出格式必须 stream-json（日志流解析依赖）
+    flags = [f for f in flags if f != "--output-format" and not f.startswith("--output-format=")
+             and f not in ("-p", "--print")]
+    has_perm = any(f == "--permission-mode" or f.startswith("--permission-mode=") for f in flags)
+    if not has_perm:
+        flags += ["--permission-mode", "bypassPermissions"]
+    has_model = any(f == "--model" or f.startswith("--model=") for f in flags)
+    if model and not has_model:
+        flags += ["--model", model]
+    fence_tools = _fence_list(fence)
+    if fence_tools:
+        has_tools = any(f == "--allowedTools" or f.startswith("--allowedTools=")
+                        or f == "--allowed-tools" for f in flags)
+        if not has_tools:
+            flags += ["--allowedTools", ",".join(fence_tools)]
+    if not prompt:
+        prompt = "继续执行当前 hexstrike 任务，用中文简洁总结。"
+    if suffix:
+        prompt += "\n\n" + suffix
+    cmd = ["claude", "-p"]
+    cmd += ["--resume", sid or session_id] if resume else ["--session-id", session_id]
+    cmd += flags + [prompt, "--output-format", "stream-json", "--verbose"]
+    has_mcp = any(f == "--mcp-config" or f.startswith("--mcp-config=") for f in flags)
+    if not has_mcp:
+        # 会话级启用集 ≠ 全局配置 → 生成 --mcp-config 让 headless 只连启用的服务器
+        try:
+            cfg_keys = set((json.load(open(os.path.join(os.path.expanduser("~"), ".claude.json")))
+                            .get("mcpServers") or {}).keys())
+            en = _mcp_enabled_servers()
+            if en and set(en) != cfg_keys:
+                tmp = os.path.join(tempfile.gettempdir(), f"hexdash_mcp_{uuid.uuid4().hex[:6]}.json")
+                with open(tmp, "w", encoding="utf-8") as fh:
+                    json.dump({"mcpServers": en}, fh, ensure_ascii=False)
+                cmd += ["--mcp-config", tmp]
+        except Exception:
+            pass
+    return cmd
+
+
+def _append_agent_events(job, proc):
+    """读完 proc 的 stream-json 事件写入 job.log；进程结束后返回 returncode。"""
+    notes = []
+    for line in proc.stdout or []:
+        try:
+            s = line.strip()
+            if not s.startswith("{"):
+                if s:
+                    notes.append(s)
+                continue
+            ev = json.loads(s)
+            msg = ev.get("message")
+            if not isinstance(msg, dict):
+                continue
+            for c in msg.get("content") or []:
+                if not isinstance(c, dict):
+                    continue
+                t = c.get("type")
+                if t == "text" and c.get("text"):
+                    job.log.append(f'<span class="t">{_ts()}</span> <span class="ok">{c["text"]}</span>')
+                elif t == "tool_use":
+                    name = c.get("name", "")
+                    job.log.append(f'<span class="t">{_ts()}</span> <span class="ac">⚙ {name}</span>')
+                    inp = c.get("input") if isinstance(c.get("input"), dict) else {}
+                    key = next((k for k in ("target", "findings_json", "query", "goal") if k in inp), None)
+                    val = str(inp.get(key, "")) if key else ""
+                    if name.startswith("mcp__hexstrike-ai__") and val:
+                        job.log.append(f'<span class="t">{_ts()}</span> <span class="cmd">'
+                                       f'&nbsp;&nbsp;↳ {val[:110]}</span>')
+        except Exception:
+            continue
+    rc = proc.wait()
+    if rc != 0 and notes:
+        job.log.append(f'<span class="t">{_ts()}</span> '
+                       f'<span class="err">! claude 退出码 {rc}: {notes[-1][:120]}</span>')
+    return rc
+
+
+def _log_skill(job, cmd):
+    """命令里若注入了技能，日志显式标出「已注入技能」，避免看起来像悄悄执行。"""
+    if "--append-system-prompt-file" not in cmd:
+        return
+    i = cmd.index("--append-system-prompt-file") + 1
+    if i >= len(cmd):
+        return
+    base = os.path.basename(cmd[i])
+    name = base.replace("hexdash_skill_", "").rsplit("_", 1)[0]
+    job.log.append(f'<span class="t">{_ts()}</span> <span class="ac">⚙ 已注入技能 /{name}</span>')
+
+
+def _run_agent_job(job, params):
+    """首跑：`claude -p --session-id <id>` 多轮自主执行，可随时中断、后 `--resume` 续跑。
+
+    `claude -p` 加载同一套 hexstrike MCP 工具（user scope），以 bypassPermissions
+    免审批自主执行，自我规划、调用工具、写快照，与当前会话同一模型链路。事件流经
+    stream-json 转成前端日志。
     """
-    import shlex
     goal = (params.get("goal") or "").strip()
     if not goal:
         job.status = "error"
@@ -386,47 +1156,55 @@ def _run_agent_job(job, params):
         return
     try:
         s = _snapshot_db.stats()
-        prompt = (goal + "\n\n（当前资产快照：%d 资产 · 确认漏洞 %d · 待复核 %d。"
+        suffix = ("（当前资产快照：%d 资产 · 确认漏洞 %d · 待复核 %d。"
                   "需要时可调 snapshot_report / query_assets 看上下文；若有新增或变更，"
                   "完成后调 snapshot_update 写回快照。最后用中文简洁总结。）"
                   % (s["total_assets"], s["total_confirmed"], s["pending_review"]))
     except Exception:
-        prompt = goal
-    cmd = ["claude", "-p", prompt, "--output-format", "stream-json", "--verbose",
-           "--allowedTools", "mcp__hexstrike-ai__*"]
+        suffix = ""
+    job.session_id = str(uuid.uuid4())
+    _jobs.last_agent = job
     cwd = os.path.dirname(os.path.abspath(__file__))
     job.log.append(f'<span class="t">{_ts()}</span> <span class="ac">🧠 交给 Claude Agent（headless）· {goal[:60]}</span>')
     try:
-        proc = subprocess.Popen(cmd, cwd=cwd, stdout=subprocess.PIPE,
-                                stderr=subprocess.STDOUT, text=True, env=dict(os.environ))
-        for line in proc.stdout or []:
-            try:
-                s = line.strip()
-                if not s.startswith("{"):
-                    continue
-                ev = json.loads(s)
-                msg = ev.get("message")
-                if not isinstance(msg, dict):
-                    continue
-                for c in msg.get("content") or []:
-                    if not isinstance(c, dict):
-                        continue
-                    t = c.get("type")
-                    if t == "text" and c.get("text"):
-                        job.log.append(f'<span class="t">{_ts()}</span> <span class="ok">{c["text"]}</span>')
-                    elif t == "tool_use":
-                        name = c.get("name", "")
-                        job.log.append(f'<span class="t">{_ts()}</span> <span class="ac">⚙ {name}</span>')
-                        inp = c.get("input") if isinstance(c.get("input"), dict) else {}
-                        key = next((k for k in ("target", "findings_json", "query", "goal") if k in inp), None)
-                        val = str(inp.get(key, "")) if key else ""
-                        if name.startswith("mcp__hexstrike-ai__") and val:
-                            job.log.append(f'<span class="t">{_ts()}</span> <span class="cmd">'
-                                           f'&nbsp;&nbsp;↳ {val[:110]}</span>')
-            except Exception:
-                continue
-        rc = proc.wait()
-        job.result = {"rc": rc, "note": "agent 执行完毕"}
+        cmd = _build_agent_cmd(job.session_id, goal, resume=False,
+                               model=params.get("model", ""), fence=params.get("fence", ""),
+                               suffix=suffix)
+        _log_skill(job, cmd)
+        job.log.append(f'<span class="t">{_ts()}</span> <span class="cmd">$ {" ".join(cmd[:6])} …</span>')
+        job.proc = subprocess.Popen(cmd, cwd=cwd,
+                                    stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                    text=True, stdin=subprocess.DEVNULL, env=dict(os.environ))
+        _append_agent_events(job, job.proc)
+        if job.status in ("paused", "cancelled"):
+            return
+        job.result = {"rc": job.proc.returncode, "note": "agent 执行完毕"}
+        job.status = "done"
+    except Exception as e:
+        job.status = "error"
+        job.error = str(e)
+        job.log.append(f'<span class="t">{_ts()}</span> <span class="err">✖ {e}</span>')
+
+
+def _run_agent_resume(job, text, model="", fence=""):
+    """续跑：`claude -p --resume <id> <用户调整>`，同一会话带记忆继续自主执行。"""
+    cwd = os.path.dirname(os.path.abspath(__file__))
+    job.status = "running"
+    _jobs.last_agent = job
+    job.log.append(f'<span class="t">{_ts()}</span> <span class="ac">▶ 继续会话</span>'
+                   + (f' <span class="cmd">「{text[:60]}」</span>' if text else ''))
+    try:
+        cmd = _build_agent_cmd(job.session_id, text or "继续执行当前任务。",
+                               resume=True, model=model, fence=fence)
+        _log_skill(job, cmd)
+        job.log.append(f'<span class="t">{_ts()}</span> <span class="cmd">$ {" ".join(cmd[:6])} …</span>')
+        job.proc = subprocess.Popen(cmd, cwd=cwd,
+                                    stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                    text=True, stdin=subprocess.DEVNULL, env=dict(os.environ))
+        _append_agent_events(job, job.proc)
+        if job.status in ("paused", "cancelled"):
+            return
+        job.result = {"rc": job.proc.returncode, "note": "agent 执行完毕"}
         job.status = "done"
     except Exception as e:
         job.status = "error"
@@ -519,6 +1297,24 @@ class _Handler(BaseHTTPRequestHandler):
             self._json(_snapshot_db.stats())
         elif route == "/api/assets":
             self._json(list(_snapshot_db.data["assets"].values()))
+        elif route == "/api/skills":
+            self._json({"skills": _list_skills()})
+        elif route == "/api/mcp":
+            self._json({"servers": _mcp_status()})
+        elif route == "/api/skill/read":
+            nm = q.get("name", [""])[0]
+            hit = next((s for s in _list_skills() if s["name"] == nm and s.get("path")), None)
+            if not hit:
+                self._json({"error": "技能未找到或无本地文件"}, 404)
+            else:
+                try:
+                    body = open(hit["path"], encoding="utf-8").read()
+                except OSError:
+                    self._json({"error": "无法读取 SKILL.md"}, 500)
+                else:
+                    self._json({"name": nm, "path": hit["path"], "content": body[:4000]})
+        elif route == "/api/menu":
+            self._json({"items": _menu()})
         elif route == "/api/report":
             full = "full=1" in q.get("full", [])
             snap = memory.AssetSnapshot(_snapshot_db.path).load()
@@ -542,7 +1338,14 @@ class _Handler(BaseHTTPRequestHandler):
             else:
                 self._json(_jobs.render(job))
         else:
-            self.send_error(404)
+            if route.startswith("/api/panel/"):
+                p = _panel(route.split("/")[-1])
+                if p is None:
+                    self._json({"error": "未知名面板"}, 404)
+                else:
+                    self._json(p)
+            else:
+                self.send_error(404)
 
     def do_POST(self):
         if _snapshot_db:
@@ -554,15 +1357,61 @@ class _Handler(BaseHTTPRequestHandler):
         except json.JSONDecodeError:
             return self._json({"error": "请求体不是合法 JSON"}, 400)
         if route == "/api/jobs":
+            active = _jobs.active_job()
+            if active:
+                return self._json({"error": f"已有活动任务（{active.kind} {active.job_id} · {active.status}），先完成或停止它再发起新任务"}, 409)
             kind = body.get("type", "scan")
             job = _jobs.create(kind, kind)
+            if kind == "agent" and (body.get("resume_session") or ""):
+                goal = body.get("goal") or ""
+                rs = (body.get("resume_session") or "").strip()
+                sid = _jobs.last_agent.session_id if (rs == "last" and _jobs.last_agent) \
+                      else (rs if rs != "last" else "")
+                if not sid:
+                    self._json({"error": "没有可续跑的上一 agent 会话"}, 400)
+                    return
+                job.session_id = sid
+                threading.Thread(target=_run_agent_resume,
+                                 args=(job, goal, body.get("model", ""), body.get("fence", "")),
+                                 daemon=True).start()
+                self._json(_jobs.render(job), 202)
+                return
             _start_job(job, body)
             self._json(_jobs.render(job), 202)
+        elif route.endswith("/interrupt"):
+            jid = route.split("/")[-2]
+            job = _jobs.get(jid)
+            if job and job.kind == "agent" and job.status == "running" and job.proc:
+                job.status = "paused"
+                try:
+                    job.proc.terminate()
+                except Exception:
+                    pass
+                job.log.append(f'<span class="t">{_ts()}</span> <span class="hot">⏸ 已中断 —— 会话已保留，可输入调整后继续</span>')
+            self._json(_jobs.render(job) if job else {"error": "not found"})
+        elif route.endswith("/resume"):
+            jid = route.split("/")[-2]
+            job = _jobs.get(jid)
+            if job and job.kind == "agent" and job.status == "paused" and job.session_id:
+                text = (body.get("text") or "").strip()
+                job.status = "running"
+                job.error = ""
+                threading.Thread(target=_run_agent_resume,
+                                 args=(job, text, body.get("model", ""), body.get("fence", "")),
+                                 daemon=True).start()
+                self._json(_jobs.render(job))
+            else:
+                self._json({"error": "job 不可续跑（非 agent / 非暂停 / 无会话）"}, 400)
         elif route.endswith("/cancel"):
             jid = route.split("/")[-2]
             job = _jobs.get(jid)
-            if job and job.status == "running":
+            if job and job.status in ("running", "paused"):
                 job.status = "cancelled"
+                if job.kind == "agent" and job.proc:
+                    try:
+                        job.proc.terminate()
+                    except Exception:
+                        pass
                 job.log.append(f'<span class="t">{_ts()}</span> <span class="hot">◼ 已请求停止（后台进程由超时兜底）</span>')
             self._json({"status": job.status if job else "not_found"})
         elif route == "/api/assets/tags":
@@ -576,28 +1425,44 @@ class _Handler(BaseHTTPRequestHandler):
             _snapshot_db.save()
             self._json({"updated": n})
         elif route == "/api/assets/delete":
-            keys = body.get("keys", []); n = 0
+            keys = body.get("keys", []); n = 0; gone = []
             for k in keys:
                 if _snapshot_db.data["assets"].pop(k, None):
-                    n += 1
-            _snapshot_db.save()
+                    gone.append(k); n += 1
+            _snapshot_db.save(remove=gone)
             self._json({"deleted": n})
         elif route == "/api/assets/merge":
             keep = body.get("keep"); keys = body.get("keys", [])
             target = _snapshot_db.data["assets"].get(keep)
             if not target:
                 return self._json({"error": "主资产不存在"}, 404)
+            gone = []
             for k in keys:
                 other = _snapshot_db.data["assets"].pop(k, None)
                 if not other:
                     continue
+                gone.append(k)
                 target["tags"] = memory._clean_tags(target.get("tags", []) + other.get("tags", []))
                 for f in other.get("findings", []):
                     if f not in target.setdefault("findings", []):
                         target["findings"].append(f)
             _snapshot_db._recompute_risk(target)
-            _snapshot_db.save()
+            _snapshot_db.save(remove=gone)
             self._json({"merged": len(keys)})
+        elif route == "/api/mcp/toggle":
+            name = body.get("name", ""); enabled = bool(body.get("enabled"))
+            if name == "hexstrike-ai":
+                return self._json({"error": "hexstrike-ai 为平台必需，不能停用"}, 400)
+            p = os.path.join(os.path.dirname(os.path.abspath(__file__)), "mcp-servers-state.json")
+            st = {}
+            try:
+                st = json.load(open(p, encoding="utf-8"))
+            except Exception:
+                pass
+            st[name] = enabled
+            with open(p, "w", encoding="utf-8") as fh:
+                json.dump(st, fh, ensure_ascii=False, indent=2)
+            self._json({"servers": _mcp_status()})
         elif route == "/api/nlp":
             from nlp import parse_action
             text = str(body.get("text") or "").strip()
@@ -619,6 +1484,10 @@ class _Handler(BaseHTTPRequestHandler):
                         if not fjs or fjs == "[]":
                             return self._json({"error": "该目标快照里没有可复验 finding，可在指令中直接贴 findings JSON"}, 400)
                     p["findings_json"] = fjs
+                active = _jobs.active_job()
+                if active:
+                    self._json({"error": f"已有活动任务（{active.kind} {active.job_id} · {active.status}），先完成或停止它再扫描"}, 409)
+                    return
                 job = _jobs.create(op, op)
                 _start_job(job, p)
                 self._json(_jobs.render(job), 202)
@@ -641,27 +1510,28 @@ class _Handler(BaseHTTPRequestHandler):
                 keys = _resolve_keys(text + " " + p.get("target", ""))
                 if not keys:
                     return self._json({"error": "快照里没匹配到目标资产"}, 404)
-                n = sum(1 for k in keys if _snapshot_db.data["assets"].pop(k, None))
-                _snapshot_db.save()
-                self._json({"ok": True, "message": f"已删除 {n} 个资产", "matched": keys})
+                gone = [k for k in keys if _snapshot_db.data["assets"].pop(k, None)]
+                _snapshot_db.save(remove=gone)
+                self._json({"ok": True, "message": f"已删除 {len(gone)} 个资产", "matched": keys})
             elif op == "merge":
                 keys = _resolve_keys(text + " " + (p.get("keep") or ""))
                 if len(keys) < 2:
                     return self._json({"error": "合并需要至少匹配到 2 个资产"}, 400)
                 keep = keys[0]
                 target = _snapshot_db.data["assets"].get(keep)
-                merged = 0
+                merged = 0; gone = []
                 for k in keys[1:]:
                     other = _snapshot_db.data["assets"].pop(k, None)
                     if not other:
                         continue
+                    gone.append(k)
                     target["tags"] = memory._clean_tags(target.get("tags", []) + other.get("tags", []))
                     for f in other.get("findings", []):
                         if f not in target.setdefault("findings", []):
                             target["findings"].append(f)
                     merged += 1
                 _snapshot_db._recompute_risk(target)
-                _snapshot_db.save()
+                _snapshot_db.save(remove=gone)
                 self._json({"ok": True, "message": f"已合并 {merged} 个资产到 {target.get('target', keep)}"})
             elif op == "report":
                 md = _snapshot_db.to_markdown(overview_only=False)

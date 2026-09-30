@@ -4,7 +4,7 @@
 把用户指令解析为固定 action schema 并与 Web 控制台 API 对齐：
   {"op": "scan|verify|tag|delete|merge|report|stats", "params": {...}}
 优先 LLM（DeepSeek chat；环境变量 DEEPSEEK_API_KEY），无 key/调用失败回退
-本地关键词规则。动作含义扫描/验证会真实发请求，仅用于已授权目标。
+本地关键词规则。动作含义扫描/验证会真实发请求。
 """
 
 import json

@@ -20,3 +20,6 @@ hexstrike-env/
 
 # Runtime snapshot (cross-task memory)
 ai-security-snapshot.json
+ai-security-snapshot.json.bak*
+ai-security-snapshot.json.lock
+mcp-servers-state.json

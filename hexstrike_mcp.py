@@ -4749,7 +4749,7 @@ def setup_mcp_server(hexstrike_client: HexStrikeClient) -> FastMCP:
         用与被验工具不同的机制（curl/nc/openssl）最小复现 finding，产出
         confirmed / refuted / unverifiable 之一 + 可手工重放的复现命令与证据哈希。
         已注册类型：open_port、exposed_path、xss、sqli、tls_misconfig；其余类型
-        默认返回 unverifiable（不做假验证）。会对目标真实发 1-3 次请求，仅限授权目标。
+        默认返回 unverifiable（不做假验证）。会对目标真实发 1-3 次请求。
 
         Args:
             finding_json: 单个 finding 的 JSON 字符串，字段含
@@ -4798,7 +4798,7 @@ def setup_mcp_server(hexstrike_client: HexStrikeClient) -> FastMCP:
         Verdict 三态判定 + markdown 报告。本质：扫描器报的每条都独立可重放。
 
         Args:
-            target: 目标 URL / IP（仅限已授权目标）
+            target: 目标 URL / IP
             severity: 按严重度过滤（critical/high/medium/low/info）
             tags: nuclei 模板 tags 过滤
             template: 指定模板文件/目录（-t）

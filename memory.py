@@ -8,6 +8,7 @@
 结果写进快照，confirmed 抬风险、refuted 留历史不计、unverifiable 待复核。
 """
 
+import fcntl
 import ipaddress
 import json
 import os
@@ -133,17 +134,58 @@ class AssetSnapshot:
             self.data = {"_meta": {"version": 1, "updated_at": "", "count": 0},
                          "assets": {}}
         self.data.setdefault("assets", {})
-        self.data.setdefault("_meta", {})
+        meta = self.data.setdefault("_meta", {})
+        meta.setdefault("version", 1)
+        # 自愈：盘上 _meta.count 可能是外部写盘留下的陈旧值，统一按真实资产数对齐
+        actual = len(self.data["assets"])
+        if meta.get("count") != actual:
+            meta["count"] = actual
         return self
 
-    def save(self) -> "AssetSnapshot":
-        self.data["_meta"]["updated_at"] = _iso_now()
-        self.data["_meta"]["count"] = len(self.data["assets"])
-        os.makedirs(os.path.dirname(os.path.abspath(self.path)), exist_ok=True)
-        tmp = self.path + ".tmp"
-        with open(tmp, "w", encoding="utf-8") as f:
-            json.dump(self.data, f, ensure_ascii=False, indent=2)
-        os.replace(tmp, self.path)          # 原子写，防中断损坏
+    def save(self, remove=None) -> "AssetSnapshot":
+        """原子写 + 跨进程 merge-on-write。
+
+        持 flock（`<path>.lock`）期间重读磁盘再合并：
+        1) 剔除 `remove`（删除意图，跨进程也不丢）；
+        2) 磁盘上有、本进程内存里没有的资产直接保留（别家新增不丢）；
+        3) 同 key 资产按 finding.id 并集，本进程同 id 的 finding 以本进程为准（更新裁决）。
+        之后整体原子替换写回。所有写盘都经此，天然跨进程串行化。
+        """
+        drop = set(remove or ())
+        lock_path = self.path + ".lock"
+        with open(lock_path, "a+", encoding="utf-8") as lf:
+            fcntl.flock(lf, fcntl.LOCK_EX)
+            try:
+                try:
+                    with open(self.path, encoding="utf-8") as f:
+                        disk_assets = json.load(f).get("assets") or {}
+                except (OSError, json.JSONDecodeError):
+                    disk_assets = {}
+                merged = disk_assets
+                for k in drop:
+                    merged.pop(k, None)
+                for k, a in self.data["assets"].items():
+                    d = merged.get(k)
+                    if d is None:
+                        merged[k] = a
+                        continue
+                    have = {x.get("id") for x in d.get("findings") or []}
+                    d.setdefault("findings", []).extend(
+                        x for x in (a.get("findings") or []) if x.get("id") not in have)
+                    d["tags"] = _clean_tags(list(d.get("tags") or []) + list(a.get("tags") or []))[:30]
+                    d["last_seen"] = a.get("last_seen") or d.get("last_seen")
+                    self._recompute_risk(d)
+                self.data["_meta"]["updated_at"] = _iso_now()
+                self.data["_meta"]["count"] = len(merged)
+                out = {"_meta": self.data["_meta"], "assets": merged}
+                os.makedirs(os.path.dirname(os.path.abspath(self.path)), exist_ok=True)
+                tmp = self.path + ".tmp"
+                with open(tmp, "w", encoding="utf-8") as f:
+                    json.dump(out, f, ensure_ascii=False, indent=2)
+                os.replace(tmp, self.path)
+                self.data["assets"] = merged
+            finally:
+                fcntl.flock(lf, fcntl.LOCK_UN)
         return self
 
     # ---- upsert（借 UpsertAssets 语义） ----

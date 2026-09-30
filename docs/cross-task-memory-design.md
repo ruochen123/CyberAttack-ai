@@ -2,7 +2,7 @@
 
 > 状态：**P0 已实施（2026-09-15）** ｜ 借鉴来源：CyberStrikeAI 资产记忆/结果治理（参考仓库 `~/references/CyberStrikeAI`，已 clone）
 > 定位：改造清单第 ③ 项。补 HexStrike 最缺的"跨任务记忆"，吸收资产规范化/去重/合并/风险演算，**不引 Neo4j/SQLite**（沿用 [[project_pentagi-evaluation]] 结论）。
-> 交付：`memory.py`（AssetSnapshot：normalize / dedup_key / upsert / 验证驱动风险 / 查询 / markdown 报告）+ `hexstrike_mcp.py` 新增 `snapshot_update` / `query_assets` / `snapshot_report` 三个薄工具（当前 158 工具注册）。单元测试 + 集成冒烟通过。
+> 交付：`memory.py`（AssetSnapshot：normalize / dedup_key / upsert / 验证驱动风险 / 查询 / markdown 报告）+ `hexstrike_mcp.py` 新增 `snapshot_update` / `query_assets` / `snapshot_report` 三个薄工具（已注册）。单元测试 + 集成冒烟通过。
 
 ## 1. 要解决的问题
 
@@ -73,6 +73,17 @@ MCP 工具（复用 `HexStrikeClient`，不新增执行层）：
 - `snapshot_update(findings_json: str, snapshot_path: str = "")` — 传入 verify_findings 结果（数组/{results}）→ upsert 资产 + 记录 verdict → 返回快照计数
 - `query_assets(query: str = "", risk_level: str = "", tags: str = "", limit: int = 50)` — 查资产基线
 - `snapshot_report(report_type: str = "overview")` — markdown 资产基线/风险汇总（可落飞书）
+
+### 5.1 并发写：跨进程 flock + merge-on-write（2026-09-21）
+
+多进程（控制台 job 线程 / headless agent 子进程 / MCP worker）都可能写同一快照。`save(remove=None)` 现在：
+
+1. 对 `<快照>.lock`（已 .gitignore）加 **flock 排它锁**，跨进程串行写；
+2. 锁内重读磁盘 → 剔除 `remove` 显式给出的删除意图（删除不再靠内存 pop 后落盘，显式传递跨进程不丢）；
+3. 磁盘上有、内存里没有的资产直接保留（别家新增不丢）；同 key 资产按 **finding.id 并集**（本进程同 id 的 finding 为准，更新裁决）；
+4. 整体原子替换（tmp + `os.replace`）写回。资产变更多不做 append 的进程各自持锁重读后写，天然收敛。
+
+另：`load()` 对 `_meta.count` 自愈——盘上陈旧计数时按真实 `len(assets)` 对齐。
 
 ## 6. 分期
 
