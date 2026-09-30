@@ -210,6 +210,10 @@ textarea{resize:vertical;min-height:64px}
         <input type="checkbox" id="afence" style="width:15px;height:15px;accent-color:var(--acc)">
         <span style="font-size:12px">工具白名单</span>
       </label>
+      <label style="display:flex;gap:6px;align-items:center;margin:0;cursor:pointer" title="并行 agent 各自用独立工作目录（.agent/<会话id>），隔离项目级 auto-memory，避免多个并行任务互相污染记忆/上下文">
+        <input type="checkbox" id="aisolate" checked style="width:15px;height:15px;accent-color:var(--acc)">
+        <span style="font-size:12px">🗂 隔离上下文(并行互不污染)</span>
+      </label>
     </div>
     <input id="atools" placeholder="逗号分隔，如 Bash,Read,Write,mcp__hexstrike-ai__query_assets" disabled style="margin-top:6px">
     <div class="hint">勾选工具白名单 → 注入 --allowedTools（名单外工具拒绝，拒绝记录进日志）</div>
@@ -328,7 +332,8 @@ function refreshCard(j){
   const col=JC[j.status]||"#94a3b8";
   card.querySelector(".jc-head").innerHTML=`<b>${j.kind==="agent"?"🧠 Agent":"🔍 Scan"} ${esc(j.kind)}</b>
     <span class="jc-id">${esc(j.job_id)}</span>
-    <span class="jchip" style="border:1px solid ${col};color:${col}">${JL[j.status]||j.status}</span>`;
+    <span class="jchip" style="border:1px solid ${col};color:${col}">${JL[j.status]||j.status}</span>
+    ${j.isolated?`<span class="cmd" title="auto-memory 按任务隔离（.agent/<会话id>）">🗂隔离</span>`:""}`;
   card.querySelector(".jc-btns").innerHTML=
     (j.kind==="agent"&&j.status==="running"?'<button class="jbtn" data-op="interrupt" title="中断（保留会话，可在本卡输入后继续）">⏸ 中断</button>':"")+
     (j.status==="running"||j.status==="paused"?'<button class="jbtn warn" data-op="cancel">✖ 取消</button>':"")+
@@ -421,7 +426,7 @@ $("ago").addEventListener("click",async()=>{
   try{
     const r=await api("/api/jobs",{method:"POST",headers:{"Content-Type":"application/json"},
       body:JSON.stringify({type:"agent",goal:g,resume_session:$("ause").checked?"last":"",
-        model:agentModel(),fence:agentFence()})});
+        model:agentModel(),fence:agentFence(),isolate:$("aisolate").checked})});
     if(r.error)return toast(r.error);
     log("ac","🧠 已交给 Claude Agent "+r.job_id+($("ause").checked?"（续上一会话）":""));
     setBusy(true);startPoll();refreshJobs();
@@ -651,6 +656,7 @@ class Job:
         self.error = ""
         self.session_id = ""      # agent：claude 会话 id（首跑 --session-id，续跑 --resume）
         self.proc = None          # agent：当前 claude 子进程（可中断）
+        self.cwd = None           # agent：工作目录（isolate 时 = .agent/<sid>，隔离项目级 auto-memory）
 
 
 class _Jobs:
@@ -683,14 +689,16 @@ class _Jobs:
         return {"job_id": job.job_id, "kind": job.kind, "status": job.status,
                 "log": job.log, "result": job.result, "error": job.error,
                 "session_id": job.session_id,
-                "resumable": bool(job.kind == "agent" and job.session_id)}
+                "resumable": bool(job.kind == "agent" and job.session_id),
+                "isolated": bool(getattr(job, "cwd", None) and ".agent" in (getattr(job, "cwd", "") or ""))}
 
     def render_list(self):
         with self.lock:
             allj = sorted(self.store.values(), key=lambda j: j.job_id)
         return [{"job_id": j.job_id, "kind": j.kind, "status": j.status,
                  "label": j.label,
-                 "resumable": bool(j.kind == "agent" and j.session_id)}
+                 "resumable": bool(j.kind == "agent" and j.session_id),
+                 "isolated": bool(getattr(j, "cwd", None) and ".agent" in (getattr(j, "cwd", "") or ""))}
                 for j in allj]
 
 
@@ -1192,6 +1200,21 @@ def _append_agent_events(job, proc):
     return rc
 
 
+def _agent_cwd(job, sid, isolate=False):
+    """决定 agent 工作目录。isolate=True 时用 .agent/<sid>，把项目级 auto-memory
+    （~/.claude/projects/...memory/）按任务隔离；否则用平台根目录（共享）。"""
+    base = os.path.dirname(os.path.abspath(__file__))
+    if isolate:
+        job.cwd = os.path.join(base, ".agent", sid)
+        try:
+            os.makedirs(job.cwd, exist_ok=True)
+        except Exception:
+            pass
+    else:
+        job.cwd = base
+    return job.cwd
+
+
 def _log_skill(job, cmd):
     """命令里若注入了技能，日志显式标出「已注入技能」，避免看起来像悄悄执行。"""
     if "--append-system-prompt-file" not in cmd:
@@ -1226,7 +1249,7 @@ def _run_agent_job(job, params):
         suffix = ""
     job.session_id = str(uuid.uuid4())
     _jobs.last_agent = job
-    cwd = os.path.dirname(os.path.abspath(__file__))
+    cwd = _agent_cwd(job, job.session_id, bool(params.get("isolate")))
     job.log.append(f'<span class="t">{_ts()}</span> <span class="ac">🧠 交给 Claude Agent（headless）· {goal[:60]}</span>')
     try:
         cmd = _build_agent_cmd(job.session_id, goal, resume=False,
@@ -1250,7 +1273,12 @@ def _run_agent_job(job, params):
 
 def _run_agent_resume(job, text, model="", fence=""):
     """续跑：`claude -p --resume <id> <用户调整>`，同一会话带记忆继续自主执行。"""
-    cwd = os.path.dirname(os.path.abspath(__file__))
+    cwd = job.cwd or _agent_cwd(job, job.session_id, False)
+    if os.path.exists(cwd):
+        try:
+            os.makedirs(cwd, exist_ok=True)
+        except Exception:
+            pass
     job.status = "running"
     _jobs.last_agent = job
     job.log.append(f'<span class="t">{_ts()}</span> <span class="ac">▶ 继续会话</span>'

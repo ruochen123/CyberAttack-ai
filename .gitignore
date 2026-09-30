@@ -34,3 +34,6 @@ bin/
 
 # secretfinder 默认输出
 output/
+
+# parallel agent isolate workdirs
+.agent/
