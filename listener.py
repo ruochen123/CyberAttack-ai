@@ -28,7 +28,8 @@ def listener_start(port: int = 4444, listener_type: str = "nc", msf_payload: str
         proc = subprocess.Popen(["docker", "exec", "-i", "hexstrike-linux", "bash", "-lc", inner],
                                 stdout=logf, stderr=subprocess.STDOUT)
     else:
-        proc = subprocess.Popen(["nc", "-lvnp", str(port)], stdout=logf, stderr=subprocess.STDOUT)
+        # macOS nc：-l 时端口是位置参数，不能带 -p（否则报 missing port）
+        proc = subprocess.Popen(["nc", "-lv", str(port)], stdout=logf, stderr=subprocess.STDOUT)
     _LISTENERS[port] = {"proc": proc, "log": log, "type": listener_type, "start": time.time()}
     time.sleep(1.0)
     if proc.poll() is not None:
@@ -50,7 +51,7 @@ def listener_poll(port: int = 4444) -> Dict[str, Any]:
     if os.path.exists(log):
         tail = open(log, errors="replace").read()
     return {"success": True, "port": port, "type": _LISTENERS[port]["type"],
-            "connected": ("connect" in tail.lower() or "connection" in tail.lower()),
+            "connected": bool(tail.strip()),   # macOS nc 不打印连接横幅，有数据即视为已连上
             "log_tail": tail[-2500:]}
 
 

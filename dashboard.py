@@ -217,11 +217,6 @@ textarea{resize:vertical;min-height:64px}
     </div>
     <input id="atools" placeholder="逗号分隔，如 Bash,Read,Write,mcp__hexstrike-ai__query_assets" disabled style="margin-top:6px">
     <div class="hint">勾选工具白名单 → 注入 --allowedTools（名单外工具拒绝，拒绝记录进日志）</div>
-    <div id="agentCtl" style="display:none;gap:8px;margin-top:8px;align-items:center">
-      <button class="btn ghost" id="aint" style="flex:none">⏸ 中断</button>
-      <input id="aadj" placeholder="调整指令（留空＝继续）" style="flex:1;min-width:0">
-      <button class="btn ghost" id="ares" style="flex:none">▶ 继续</button>
-    </div>
     <hr style="border:none;border-top:1px solid var(--line);margin:14px 0 2px">
     <label for="tgt">目标（URL / 域名 / IP）</label>
     <input id="tgt" placeholder="https://host / host:port" value="">
@@ -249,9 +244,49 @@ textarea{resize:vertical;min-height:64px}
     </div>
     <div class="btnrow">
       <button class="btn primary" id="go">▶ 执行</button>
-      <button class="btn ghost" id="stop" disabled>停止</button>
     </div>
     <div class="hint">action 会真实发请求；每一步都留可复现命令</div>
+  </div></div>
+
+  <div class="panel"><h3>纵深工具（在并行池内各开任务卡）</h3><div class="pbody">
+    <label for="chainUrl">EXP 自动关联（指纹 → 组件/版本/可打 EXP 清单）</label>
+    <div style="display:flex;gap:8px">
+      <input id="chainUrl" placeholder="https://host">
+      <button class="btn ghost" id="goChain" style="flex:none">🔗 关联 EXP</button>
+    </div>
+    <label style="margin-top:12px">反连助手（生成 payload + 起本地监听）</label>
+    <div style="display:flex;gap:8px;align-items:center">
+      <input id="rlIp" placeholder="监听机 IP" style="flex:none;width:120px">
+      <input id="rlPort" placeholder="4444" style="flex:none;width:64px">
+      <select id="rlTech" style="flex:none">
+        <option value="bash">bash</option><option value="nc">nc</option><option value="python">python3</option>
+        <option value="perl">perl</option><option value="openssl">openssl</option><option value="powershell">powershell</option>
+      </select>
+      <button class="btn ghost" id="goRev" style="flex:none">🪝 反连+监听</button>
+    </div>
+    <label style="margin-top:12px">未授权服务检测</label>
+    <div style="display:flex;gap:8px">
+      <input id="svHost" placeholder="host" style="flex:none;width:150px">
+      <input id="svPort" placeholder="端口(默认按服务)" style="flex:none;width:120px">
+    </div>
+    <div style="display:flex;gap:6px;margin-top:6px">
+      <button class="btn ghost" data-svc="redis" style="flex:none">redis</button>
+      <button class="btn ghost" data-svc="ldap" style="flex:none">ldap</button>
+      <button class="btn ghost" data-svc="mongo" style="flex:none">mongo</button>
+    </div>
+    <label for="idorUrl" style="margin-top:12px">IDOR 越权差分（URL 含 {id}）</label>
+    <div style="display:flex;gap:8px">
+      <input id="idorUrl" placeholder="https://host/api/user/{id}/details">
+      <button class="btn ghost" id="goIdor" style="flex:none">🎯 差分</button>
+    </div>
+    <input id="idorOpts" placeholder="起 止 高权Cookie 低权Cookie，如 1 10 admin=1 ''" style="margin-top:6px">
+    <label style="margin-top:12px">OAST 盲测（interact.sh 带外交互坐实盲测）</label>
+    <div style="display:flex;gap:6px;align-items:center">
+      <button class="btn ghost" id="goOastStart" style="flex:none">▶ 发起(拿域名)</button>
+      <input id="oastId" placeholder="oast_id" style="flex:1;min-width:60px">
+      <button class="btn ghost" id="goOastPoll" style="flex:none">🔁 轮询</button>
+      <button class="btn ghost" id="goOastStop" style="flex:none">⏹ 停止</button>
+    </div>
   </div></div>
 
   <div class="panel"><h3>活动日志</h3><div class="pbody">
@@ -308,6 +343,8 @@ function log(cls,msg){const l=$("log");const ln=document.createElement("div");ln
 let pool={max:3,list:[]};
 const JC={running:"#4ade80",paused:"#fbbf24",done:"#38bdf8",error:"#f87171",cancelled:"#94a3b8"};
 const JL={running:"运行",paused:"已暂停",done:"完成",error:"错误",cancelled:"已取消"};
+const KIND={scan:"扫描",verify:"验证",agent:"自主任务",chain:"EXP关联",util:"工具"};
+const EMOJI={scan:"🔍",verify:"✅",agent:"🧠",chain:"🔗",util:"🛠"};
 async function refreshJobs(){try{const r=await api("/api/jobs");pool.max=(r.max_running||3);pool.list=r.jobs||[];
   const act=pool.list.filter(j=>j.status==="running"||j.status==="paused");
   $("jobCount").textContent=act.length+"/"+pool.max;
@@ -330,7 +367,7 @@ function renderCard(j){
 function refreshCard(j){
   const card=$("cards").querySelector(`[data-id="${j.job_id}"]`);if(!card)return;
   const col=JC[j.status]||"#94a3b8";
-  card.querySelector(".jc-head").innerHTML=`<b>${j.kind==="agent"?"🧠 Agent":"🔍 Scan"} ${esc(j.kind)}</b>
+  card.querySelector(".jc-head").innerHTML=`<b>${EMOJI[j.kind]||"🛠"} ${esc(KIND[j.kind]||j.kind)}</b>
     <span class="jc-id">${esc(j.job_id)}</span>
     <span class="jchip" style="border:1px solid ${col};color:${col}">${JL[j.status]||j.status}</span>
     ${j.isolated?`<span class="cmd" title="auto-memory 按任务隔离（.agent/<会话id>）">🗂隔离</span>`:""}`;
@@ -413,7 +450,7 @@ $("nlpGo").addEventListener("click",async()=>{
     const r=await api("/api/nlp",{method:"POST",headers:{"Content-Type":"application/json"},
       body:JSON.stringify({text:t})});
     if(r.error){log("err",r.error);return toast(r.error);}
-    if(r.job_id){log("ac","指令 → "+r.kind+" "+r.job_id);
+    if(r.job_id){log("ac","指令 → "+(KIND[r.kind]||r.kind)+" "+r.job_id);
       setBusy(true);startPoll();refreshJobs();}
     else if(r.ok){toast(r.message||"完成");log("ok",r.message||"完成");
       if(r.stats)log("ok",`资产 ${r.stats.total_assets} · 确认漏洞 ${r.stats.total_confirmed} · 待复核 ${r.stats.pending_review}`);
@@ -428,7 +465,7 @@ $("ago").addEventListener("click",async()=>{
       body:JSON.stringify({type:"agent",goal:g,resume_session:$("ause").checked?"last":"",
         model:agentModel(),fence:agentFence(),isolate:$("aisolate").checked})});
     if(r.error)return toast(r.error);
-    log("ac","🧠 已交给 Claude Agent "+r.job_id+($("ause").checked?"（续上一会话）":""));
+    log("ac","🧠 已交给自主任务 "+r.job_id+($("ause").checked?"（续上一会话）":""));
     setBusy(true);startPoll();refreshJobs();
   }catch(e){log("err",e.message);}
 });
@@ -458,10 +495,30 @@ async function runCmd(){
   else{const js=$("fjs").value.trim();if(!js)return toast("填 findings JSON");body.findings_json=js;}
   try{
     const j=await api("/api/jobs",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
-    log("ac","已提交 "+j.kind+" "+j.job_id);
+    log("ac","已提交 "+(KIND[j.kind]||j.kind)+" "+j.job_id);
     setBusy(true);startPoll();refreshJobs();
   }catch(e){toast(e.message);}
 }
+async function submitJob(body,label){
+  try{const j=await api("/api/jobs",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+    log("ac",label+" "+j.job_id);setBusy(true);startPoll();refreshJobs();}
+  catch(e){toast(e.message);}
+}
+$("goChain").addEventListener("click",()=>{const u=$("chainUrl").value.trim();if(!u)return toast("填目标 URL");
+  submitJob({type:"chain",url:u,limit:"4"},"🔗 EXP关联");});
+$("goRev").addEventListener("click",()=>{const ip=$("rlIp").value.trim(),port=$("rlPort").value.trim()||"4444";
+  if(!ip)return toast("填监听机 IP");submitJob({type:"util",action:"revshell",ip,port,technique:$("rlTech").value},"🪝 反连");});
+document.querySelectorAll("[data-svc]").forEach(b=>b.addEventListener("click",()=>{
+  const host=$("svHost").value.trim();if(!host)return toast("填 host");
+  const d={redis:"6379",ldap:"389",mongo:"27017"};
+  submitJob({type:"util",action:b.dataset.svc,host,port:$("svPort").value.trim()||d[b.dataset.svc]},"未授权 "+b.dataset.svc);}));
+$("goIdor").addEventListener("click",()=>{const u=$("idorUrl").value.trim();if(!u)return toast("填 URL（含 {id}）");
+  const p=($("idorOpts").value||"").split(/\s+/);
+  submitJob({type:"util",action:"idor",base_url:u,start:parseInt(p[0])||1,end:parseInt(p[1])||10,
+    cookie_a:p[2]||"",cookie_b:p[3]||""},"🎯 IDOR");});
+$("goOastStart").addEventListener("click",()=>submitJob({type:"util",action:"oast_start"},"▶ OAST"));
+$("goOastPoll").addEventListener("click",()=>submitJob({type:"util",action:"oast_poll",oast_id:$("oastId").value.trim()},"🔁 OAST"));
+$("goOastStop").addEventListener("click",()=>submitJob({type:"util",action:"oast_stop",oast_id:$("oastId").value.trim()},"⏹ OAST"));
 let MENU=[],skillCtx=null;
 async function loadMenu(){try{const r=await api("/api/menu");MENU=r.items||[];}catch(e){}}
 function tokSplit(v){const sp=v.lastIndexOf(" ");return [v.slice(0,sp+1),v.slice(sp+1)];}
@@ -636,7 +693,7 @@ $("uxClose").addEventListener("click",()=>{$("uxModal").hidden=true;});
 $("uxModal").addEventListener("click",e=>{if(e.target===$("uxModal"))$("uxModal").hidden=true;});
 document.addEventListener("keydown",e=>{if(e.key==="Escape"){$("skillMenu").hidden=true;$("uxModal").hidden=true;}});
 loadMenu();
-["agoal","aadj","nlpInput"].forEach(attachSkill);
+["agoal","nlpInput"].forEach(attachSkill);
 loadAssets();
 refreshJobs();
 </script>
@@ -1309,7 +1366,89 @@ def _run_job(job, params):
     try:
         logln = lambda s: job.log.append(f'<span class="t">{_ts()}</span> {s}')
         client = _client()
-        if job.kind == "scan":
+        import html as _html
+        if job.kind == "chain":
+            import attackchain
+            url = params.get("url", "")
+            logln('▶ <span class="ac">EXP 自动关联</span> ' + url)
+            res = attackchain.attack_chain(url, searchsploit_limit=int(params.get("limit") or 4))
+            for c in res.get("components", []):
+                meta = f"{c['name']} {c.get('version') or ''}".strip()
+                logln(f'  · <b>{_html.escape(meta)}</b> — nuclei:{",".join(c.get("nuclei_tags", []))} msf:{c.get("msf") or "-"}')
+                for ss in c.get("searchsploit", [])[:3]:
+                    logln('      <span class="cmd">' + _html.escape(ss) + '</span>')
+            if not res.get("components"):
+                logln('! 未识别到已知组件（可换 advanced：手动 whatweb 抓版本）')
+            job.result = res
+        elif job.kind == "util":
+            act = params.get("action") or ""
+            if act == "revshell":
+                import revshell, listener
+                ip = params.get("ip", ""); port = int(params.get("port") or 4444)
+                r = revshell.revshell_generate(ip, port, technique=params.get("technique") or "bash")
+                if not r.get("success"):
+                    raise RuntimeError(r.get("error"))
+                l = listener.listener_start(port, params.get("listener_type") or "nc")
+                if l.get("success"):
+                    logln(f'▶ 反连：本机已监听 :{port} —— 去目标粘贴 payload')
+                else:
+                    logln('! ' + (l.get("error") or "listener 启动失败"))
+                    logln(f'    可手动起：nc -lvnp {port}')
+                logln('<span class="cmd">' + _html.escape(r["payload"]) + '</span>')
+                if r.get("note"):
+                    logln('  <span class="cmd">' + _html.escape(r["note"]) + '</span>')
+                job.result = {"payload": r["payload"], "listener": l}
+            elif act in ("redis", "ldap", "mongo"):
+                tool = {"redis": "redis", "ldap": "ldap", "mongo": "mongosh"}[act]
+                host = params.get("host", "")
+                if act == "redis":
+                    p = {"target": host, "port": params.get("port") or "6379",
+                         "command": params.get("command") or "info server"}
+                elif act == "ldap":
+                    p = {"hostport": f"{host}:{params.get('port') or 389}",
+                         "base_dn": params.get("base_dn") or "", "filter": params.get("filter") or "(objectClass=*)",
+                         "attrs": params.get("attrs") or ""}
+                else:
+                    p = {"uri": f"mongodb://{host}:{params.get('port') or 27017}",
+                         "eval": params.get("eval") or "db.adminCommand({listDatabases:1})"}
+                logln(f'▶ 未授权检测 {act.upper()} {host}')
+                res = client.execute_tool_async(tool, "api/tools/" + tool, p) or {"success": False, "error": "empty"}
+                out = (res.get("stdout") or res.get("error") or str(res))[:1500].replace("\n", " · ")
+                logln(out)
+                job.result = res
+            elif act == "idor":
+                import idor
+                logln('▶ IDOR 越权差分 ' + (params.get("base_url") or ""))
+                res = idor.idor_check(base_url=params.get("base_url", ""),
+                                      start=int(params.get("start") or 1), end=int(params.get("end") or 10),
+                                      ids=params.get("ids") or "",
+                                      cookie_a=params.get("cookie_a") or "", cookie_b=params.get("cookie_b") or "",
+                                      bearer_a=params.get("bearer_a") or "", bearer_b=params.get("bearer_b") or "")
+                for f in res.get("findings", []):
+                    logln(f'  <span class="err">!! {f["id"]}: {_html.escape(f["note"])}</span>')
+                logln(f"  检查 {res['checked']} 个对象，发现 {len(res['findings'])} 个可能越权")
+                job.result = res
+            elif act == "oast_start":
+                import oast
+                r = oast.oast_start(server=params.get("server") or "interact.sh")
+                if r.get("success"):
+                    logln('▶ OAST 回显域名：<span class="ac">' + _html.escape(r["domain"]) + '</span>（嵌进 SSRF/XXE/XSS payload，然后新开「OAST 轮询」任务）')
+                else:
+                    logln('! ' + (r.get("error") or "start failed"))
+                job.result = r
+            elif act == "oast_poll":
+                import oast
+                r = oast.oast_poll(params.get("oast_id") or "")
+                logln(f"▶ OAST 回显 {r.get('interaction_count', 0)} 条")
+                for it in (r.get("interactions") or [])[:6]:
+                    logln(f'  · {it.get("protocol")} {it.get("q-type") or it.get("url") or ""}'.strip())
+                job.result = r
+            elif act == "oast_stop":
+                import oast
+                logln('▶ OAST 停止：' + str(oast.oast_stop(params.get("oast_id") or "").get("stopped")))
+            else:
+                raise RuntimeError("未知 util action: " + act)
+        elif job.kind == "scan":
             logln('▶ <span class="ac">nuclei -jsonl 扫描 + 独立复验</span> ' + params.get("target", ""))
             res = nuclei_scan_and_verify(client, params.get("target", ""),
                                          severity=params.get("severity", ""),
@@ -1326,12 +1465,13 @@ def _run_job(job, params):
             res = verify_findings(client, fjs, only_types=params.get("only_types", ""))
             logln(f"验证完成：confirmed {res['confirmed']} / refuted {res['refuted']} / unverifiable {res['unverifiable']}")
             job.result = res
-        # 自动写资产快照
-        try:
-            added = _snapshot_db.record_verifications(job.result.get("results", []))
-            logln(f"√ 写入资产快照：新增 {added['assets_created']} / 更新 {added['assets_updated']}")
-        except Exception as e:
-            logln(f"! 快照写入失败：{e}")
+        # 自动写资产快照（仅 scan/verify 有 findings 语义）
+        if job.kind in ("scan", "verify"):
+            try:
+                added = _snapshot_db.record_verifications(job.result.get("results", []))
+                logln(f"√ 写入资产快照：新增 {added['assets_created']} / 更新 {added['assets_updated']}")
+            except Exception as e:
+                logln(f"! 快照写入失败：{e}")
         job.status = "done"
     except Exception as e:
         job.status = "error"
