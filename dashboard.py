@@ -179,7 +179,12 @@ textarea{resize:vertical;min-height:64px}
 </header>
 
 <main>
-  <div class="panel"><h3>发起操作</h3><div class="pbody">
+  <div class="panel"><h3>使用流程（推荐路径）</h3><div class="pbody" style="font-size:12.5px;line-height:1.7">
+    <div>① <b>输入目标</b>（右下 URL 框或直接写进自主任务）→ ② <b>勾「自主任务」一次跑完主线</b>（指纹→EXP→扫描/盲测→坐实→写快照→中文总结）→ ③ 结果看 <b>活动日志卡片</b> 与 <b>资产快照</b>。</div>
+    <div class="hint" style="margin-top:6px">多数目标一条自主任务就够。下方「手动工具」＝精确档位：agent 跑偏、要指定 tags、单点坐实（OAST/未授权/IDOR）、侧路取证（截屏/JS密钥）时才用。</div>
+  </div></div>
+
+  <div class="panel"><h3>起手 · 自主任务（推荐主线）</h3><div class="pbody">
     <label for="nlpInput">自然语言指令</label>
     <div style="display:flex;gap:8px">
       <input id="nlpInput" placeholder="扫描 https://example.com:8443 的高危 xss">
@@ -218,8 +223,11 @@ textarea{resize:vertical;min-height:64px}
     <input id="atools" placeholder="逗号分隔，如 Bash,Read,Write,mcp__hexstrike-ai__query_assets" disabled style="margin-top:6px">
     <div class="hint">勾选工具白名单 → 注入 --allowedTools（名单外工具拒绝，拒绝记录进日志）</div>
     <hr style="border:none;border-top:1px solid var(--line);margin:14px 0 2px">
-    <label for="tgt">目标（URL / 域名 / IP）</label>
-    <input id="tgt" placeholder="https://host / host:port" value="">
+    <label for="tgt">扫描目标（URL / 域名 / IP）</label>
+    <div style="display:flex;gap:8px">
+      <input id="tgt" placeholder="https://host / host:port" value="">
+      <button class="btn ghost" id="useTgt" style="flex:none" title="把目标填进上方自主任务框，一键跑主线">→ 交自主任务</button>
+    </div>
     <div class="opts">
       <label for="ftype">扫描类型</label>
       <select id="ftype">
@@ -248,13 +256,32 @@ textarea{resize:vertical;min-height:64px}
     <div class="hint">action 会真实发请求；每一步都留可复现命令</div>
   </div></div>
 
-  <div class="panel"><h3>纵深工具（在并行池内各开任务卡）</h3><div class="pbody">
-    <label for="chainUrl">EXP 自动关联（指纹 → 组件/版本/可打 EXP 清单）</label>
+  <div class="panel"><h3>手动工具 · 精确档位（每步一个任务卡）</h3><div class="pbody">
+    <div style="font-size:12px;color:var(--ink2);line-height:1.5">在这里精确地做某一步；普通流程交给上面的「自主任务」。</div>
+
+    <div style="margin-top:12px;font-weight:600;color:var(--ink)">▸ 侦察 · 指纹 &amp; EXP</div>
+    <div class="hint">识别组件/版本并自动关联可打 EXP（searchsploit · nuclei tag · msf 模块）</div>
     <div style="display:flex;gap:8px">
       <input id="chainUrl" placeholder="https://host">
       <button class="btn ghost" id="goChain" style="flex:none">🔗 关联 EXP</button>
     </div>
-    <label style="margin-top:12px">反连助手（生成 payload + 起本地监听）</label>
+
+    <div style="margin-top:14px;font-weight:600;color:var(--ink)">▸ 漏洞 · 喷洒 / 盲测</div>
+    <div class="hint">带参扫描在上方「起手」面板；这里补 弱口令喷洒 与 OAST 盲测坐实</div>
+    <div style="display:flex;gap:8px;align-items:center">
+      <input id="spUrl" placeholder="https://host" style="flex:1">
+      <input id="spLogin" placeholder="/login" style="flex:none;width:90px">
+      <button class="btn ghost" id="goSpray" style="flex:none">🧪 弱口令喷洒</button>
+    </div>
+    <div style="display:flex;gap:6px;align-items:center;margin-top:8px">
+      <button class="btn ghost" id="goOastStart" style="flex:none">▶ OAST 发起(拿域名)</button>
+      <input id="oastId" placeholder="oast_id" style="flex:1;min-width:60px">
+      <button class="btn ghost" id="goOastPoll" style="flex:none">🔁 轮询</button>
+      <button class="btn ghost" id="goOastStop" style="flex:none">⏹ 停止</button>
+    </div>
+
+    <div style="margin-top:14px;font-weight:600;color:var(--ink)">▸ 利用 · 反连 / 未授权服务</div>
+    <div class="hint">攻破后建反连（生成 payload+起监听），再测 redis/ldap/mongo 未授权</div>
     <div style="display:flex;gap:8px;align-items:center">
       <input id="rlIp" placeholder="监听机 IP" style="flex:none;width:120px">
       <input id="rlPort" placeholder="4444" style="flex:none;width:64px">
@@ -264,28 +291,31 @@ textarea{resize:vertical;min-height:64px}
       </select>
       <button class="btn ghost" id="goRev" style="flex:none">🪝 反连+监听</button>
     </div>
-    <label style="margin-top:12px">未授权服务检测</label>
-    <div style="display:flex;gap:8px">
+    <div style="display:flex;gap:6px;align-items:center;margin-top:8px">
       <input id="svHost" placeholder="host" style="flex:none;width:150px">
-      <input id="svPort" placeholder="端口(默认按服务)" style="flex:none;width:120px">
-    </div>
-    <div style="display:flex;gap:6px;margin-top:6px">
+      <input id="svPort" placeholder="端口" style="flex:none;width:90px">
       <button class="btn ghost" data-svc="redis" style="flex:none">redis</button>
       <button class="btn ghost" data-svc="ldap" style="flex:none">ldap</button>
       <button class="btn ghost" data-svc="mongo" style="flex:none">mongo</button>
     </div>
-    <label for="idorUrl" style="margin-top:12px">IDOR 越权差分（URL 含 {id}）</label>
+
+    <div style="margin-top:14px;font-weight:600;color:var(--ink)">▸ 逻辑 · 越权（IDOR）</div>
+    <div class="hint">对 URL 中 {id} 做 高权/低权/匿名 三视角差分，找水平越权</div>
     <div style="display:flex;gap:8px">
       <input id="idorUrl" placeholder="https://host/api/user/{id}/details">
       <button class="btn ghost" id="goIdor" style="flex:none">🎯 差分</button>
     </div>
     <input id="idorOpts" placeholder="起 止 高权Cookie 低权Cookie，如 1 10 admin=1 ''" style="margin-top:6px">
-    <label style="margin-top:12px">OAST 盲测（interact.sh 带外交互坐实盲测）</label>
-    <div style="display:flex;gap:6px;align-items:center">
-      <button class="btn ghost" id="goOastStart" style="flex:none">▶ 发起(拿域名)</button>
-      <input id="oastId" placeholder="oast_id" style="flex:1;min-width:60px">
-      <button class="btn ghost" id="goOastPoll" style="flex:none">🔁 轮询</button>
-      <button class="btn ghost" id="goOastStop" style="flex:none">⏹ 停止</button>
+
+    <div style="margin-top:14px;font-weight:600;color:var(--ink)">▸ 取证 · 侧路</div>
+    <div class="hint">JS 硬编码密钥、页面截图（报告佐证）</div>
+    <div style="display:flex;gap:8px;align-items:center">
+      <input id="sfUrl" placeholder="https://host/app.js" style="flex:1">
+      <button class="btn ghost" id="goSecret" style="flex:none">🔍 JS 密钥</button>
+    </div>
+    <div style="display:flex;gap:8px;align-items:center;margin-top:8px">
+      <input id="ssUrl" placeholder="https://host" style="flex:1">
+      <button class="btn ghost" id="goScreenshot" style="flex:none">📸 截图</button>
     </div>
   </div></div>
 
@@ -519,6 +549,13 @@ $("goIdor").addEventListener("click",()=>{const u=$("idorUrl").value.trim();if(!
 $("goOastStart").addEventListener("click",()=>submitJob({type:"util",action:"oast_start"},"▶ OAST"));
 $("goOastPoll").addEventListener("click",()=>submitJob({type:"util",action:"oast_poll",oast_id:$("oastId").value.trim()},"🔁 OAST"));
 $("goOastStop").addEventListener("click",()=>submitJob({type:"util",action:"oast_stop",oast_id:$("oastId").value.trim()},"⏹ OAST"));
+$("useTgt").addEventListener("click",()=>{const t=$("tgt").value.trim();if(!t)return toast("先填目标");$("agoal").value=`对 ${t} 做一次完整侦查：指纹识别、攻击面与已知漏洞、可用 EXP 与盲测建议；完成后把关键发现写入快照并用中文总结`;$("agoal").focus();toast("目标已放入自主任务框，点 🧠 发起");});
+$("goSpray").addEventListener("click",()=>{const u=$("spUrl").value.trim();if(!u)return toast("填目标 URL");
+  submitJob({type:"util",action:"spray",url:u,login_path:$("spLogin").value.trim()||"/login"},"🧪 喷洒");});
+$("goSecret").addEventListener("click",()=>{const u=$("sfUrl").value.trim();if(!u)return toast("填 JS URL");
+  submitJob({type:"util",action:"secret",url:u},"🔍 JS密钥");});
+$("goScreenshot").addEventListener("click",()=>{const u=$("ssUrl").value.trim();if(!u)return toast("填目标 URL");
+  submitJob({type:"util",action:"screenshot",url:u},"📸 截图");});
 let MENU=[],skillCtx=null;
 async function loadMenu(){try{const r=await api("/api/menu");MENU=r.items||[];}catch(e){}}
 function tokSplit(v){const sp=v.lastIndexOf(" ");return [v.slice(0,sp+1),v.slice(sp+1)];}
@@ -1427,6 +1464,35 @@ def _run_job(job, params):
                 for f in res.get("findings", []):
                     logln(f'  <span class="err">!! {f["id"]}: {_html.escape(f["note"])}</span>')
                 logln(f"  检查 {res['checked']} 个对象，发现 {len(res['findings'])} 个可能越权")
+                job.result = res
+            elif act == "spray":
+                import sprays
+                logln('▶ 弱口令定向喷洒 ' + (params.get("url") or ""))
+                res = sprays.web_login_spray(url=params.get("url", ""),
+                                             login_path=params.get("login_path") or "/login",
+                                             users=params.get("users") or "",
+                                             passwords=params.get("passwords") or "",
+                                             fail_indicator=params.get("fail_indicator") or "",
+                                             body_format=params.get("body_format") or "form",
+                                             max_attempts=int(params.get("max_attempts") or 60))
+                for h in res.get("confirmed", []):
+                    logln(f'  <span class="err">!! 命中 {_html.escape(h)}</span>')
+                logln(f"  尝试 {res['attempts']} 次，命中 {len(res['confirmed'])} 个" + ("（触发拦截）" if res.get("blocked") else ""))
+                job.result = res
+            elif act == "secret":
+                logln('▶ JS 密钥扫描 ' + (params.get("url") or ""))
+                data = {"url": params.get("url", ""), "output": "", "additional_args": ""}
+                res = client.execute_tool_async("secretfinder", "api/tools/secretfinder", data) or {"success": False, "error": "empty"}
+                out = (res.get("stdout") or res.get("error") or str(res))[:2000].replace("\n", " · ")
+                logln(out)
+                job.result = res
+            elif act == "screenshot":
+                logln('▶ 网页截屏 ' + (params.get("url") or ""))
+                data = {"url": params.get("url", ""), "outdir": params.get("outdir") or "/Users/zhj/hexstrike-ai/screenshots", "additional_args": ""}
+                res = client.execute_tool_async("web_screenshot", "api/tools/web_screenshot", data) or {"success": False, "error": "empty"}
+                out = (res.get("stdout") or res.get("error") or str(res))[:800].strip()
+                if out:
+                    logln('  保存至 <span class="cmd">' + _html.escape(out) + '</span>')
                 job.result = res
             elif act == "oast_start":
                 import oast
