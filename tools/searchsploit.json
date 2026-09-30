@@ -1,0 +1,30 @@
+{
+  "binary": "searchsploit",
+  "category": "exploitation",
+  "description": "Offline Exploit-DB search for exploits and vulnerable software",
+  "timeout": 60,
+  "command": [
+    "searchsploit",
+    {
+      "param": "title_only",
+      "flag": "-t"
+    },
+    {
+      "param": "exclude",
+      "flag": "-e"
+    },
+    {
+      "param": "cve",
+      "flag": "-c",
+      "quote": true
+    },
+    {
+      "param": "term",
+      "quote": true
+    },
+    {
+      "param": "additional_args"
+    }
+  ],
+  "name": "searchsploit"
+}

@@ -1,0 +1,49 @@
+{
+  "binary": "xsstrike",
+  "category": "exploitation",
+  "description": "Advanced XSS detection and exploitation suite (XSStrike)",
+  "timeout": 300,
+  "command": [
+    "xsstrike",
+    "-u",
+    {
+      "param": "url",
+      "alt_param": "target",
+      "quote": true
+    },
+    {
+      "param": "data",
+      "flag": "--data",
+      "quote": true
+    },
+    {
+      "param": "crawl",
+      "flag": "--crawl"
+    },
+    {
+      "param": "params",
+      "flag": "--params",
+      "quote": true
+    },
+    {
+      "param": "level",
+      "flag": "-l"
+    },
+    {
+      "param": "timeout",
+      "flag": "--timeout"
+    },
+    {
+      "param": "path",
+      "flag": "--path"
+    },
+    {
+      "param": "proxy",
+      "flag": "--proxy"
+    },
+    {
+      "param": "additional_args"
+    }
+  ],
+  "name": "xsstrike"
+}

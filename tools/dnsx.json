@@ -1,0 +1,54 @@
+{
+  "binary": "dnsx",
+  "category": "network",
+  "description": "Fast DNS resolution and record enumeration (projectdiscovery)",
+  "timeout": 120,
+  "command": [
+    "echo",
+    {
+      "param": "domain",
+      "quote": true
+    },
+    "|",
+    "dnsx",
+    "-silent",
+    "-resp",
+    {
+      "param": "a",
+      "flag": "-a",
+      "default": true
+    },
+    {
+      "param": "aaaa",
+      "flag": "-aaaa"
+    },
+    {
+      "param": "cname",
+      "flag": "-cname"
+    },
+    {
+      "param": "mx",
+      "flag": "-mx"
+    },
+    {
+      "param": "ns",
+      "flag": "-ns"
+    },
+    {
+      "param": "txt",
+      "flag": "-txt"
+    },
+    {
+      "param": "soa",
+      "flag": "-soa"
+    },
+    {
+      "param": "ptr",
+      "flag": "-ptr"
+    },
+    {
+      "param": "additional_args"
+    }
+  ],
+  "name": "dnsx"
+}

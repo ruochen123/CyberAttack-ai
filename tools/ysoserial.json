@@ -1,0 +1,35 @@
+{
+  "binary": "docker",
+  "backend": "docker",
+  "container": "hexstrike-linux",
+  "container_binary": "java",
+  "category": "exploitation",
+  "description": "Generate Java deserialization gadget payloads (ysoserial in Linux sidecar)",
+  "timeout": 60,
+  "command": [
+    "java",
+    "--add-opens",
+    "java.base/java.lang.reflect=ALL-UNNAMED",
+    "--add-opens",
+    "java.base/java.net=ALL-UNNAMED",
+    "--add-opens",
+    "java.base/java.util=ALL-UNNAMED",
+    "-jar",
+    "/opt/ysoserial-all.jar",
+    {
+      "param": "gadget",
+      "quote": true
+    },
+    {
+      "param": "command",
+      "quote": true
+    },
+    {
+      "param": "additional_args"
+    },
+    "|",
+    "base64",
+    "-w0"
+  ],
+  "name": "ysoserial"
+}

@@ -1,0 +1,38 @@
+{
+  "binary": "commix",
+  "category": "exploitation",
+  "description": "Automated command injection exploitation (Commix)",
+  "timeout": 300,
+  "command": [
+    "commix",
+    "--batch",
+    "--url",
+    {
+      "param": "url",
+      "alt_param": "target",
+      "quote": true
+    },
+    {
+      "param": "data",
+      "flag": "--data",
+      "quote": true
+    },
+    {
+      "param": "cookie",
+      "flag": "--cookie",
+      "quote": true
+    },
+    {
+      "param": "level",
+      "flag": "--level"
+    },
+    {
+      "param": "technique",
+      "flag": "--technique"
+    },
+    {
+      "param": "additional_args"
+    }
+  ],
+  "name": "commix"
+}

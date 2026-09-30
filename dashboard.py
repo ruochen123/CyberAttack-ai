@@ -112,6 +112,28 @@ textarea{resize:vertical;min-height:64px}
 .dotb{width:7px;height:7px;border-radius:50%}
 .tag{display:inline-block;background:var(--raise);border:1px solid var(--line);border-radius:4px;
   padding:0 6px;font-size:11px;margin:1px 2px;font-family:var(--mono);color:var(--ink2)}
+.jchip{display:inline-flex;align-items:center;gap:4px;padding:2px 9px;border-radius:99px;font-size:11.5px;
+  cursor:pointer;background:var(--raise);user-select:none}
+.jchip:hover{filter:brightness(1.15)}
+.jchip.active{background:var(--surface);filter:brightness(1.3)}
+.jcard{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:8px 10px;
+  display:flex;flex-direction:column;gap:6px}
+.jcard .jc-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:12.5px}
+.jcard .jc-id{font-family:var(--mono);color:var(--ink3);font-size:11px}
+.jcard .jc-btns{display:flex;gap:6px;flex-wrap:wrap}
+.jcard .jc-adjust{display:flex;gap:6px;flex-direction:column;border-top:1px dashed var(--line);padding-top:6px}
+.jcard .jadjust{background:var(--bg);border:1px solid var(--line);color:var(--ink);border-radius:6px;
+  padding:6px 8px;font-family:var(--mono);font-size:12px;resize:vertical}
+.jcard .jc-log{background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:6px 8px;
+  max-height:220px;overflow:auto;font-size:11.5px;line-height:1.7}
+.jcard .jc-done{margin-top:4px;padding:4px 8px;border-radius:6px;background:color-mix(in srgb,var(--ace,#38bdf8) 12%,transparent);
+  color:var(--ink)}
+.jbtn{border:1px solid var(--line);background:var(--raise);color:var(--ink2);border-radius:6px;
+  padding:2px 10px;font-size:12px;cursor:pointer}
+.jbtn:hover{filter:brightness(1.2)}
+.jbtn.ok{color:#4ade80;border-color:#4ade80}
+.jbtn.warn{color:#f87171;border-color:#f87171}
+#cards{display:grid;gap:10px;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));margin:8px 0}
 /* findings expand */
 .find{margin:6px 9px 8px;padding:10px;background:var(--bg);border:1px solid var(--line);border-radius:6px}
 .find .f{display:grid;grid-template-columns:auto 1fr;gap:4px 12px;padding:5px 0;border-bottom:1px dashed var(--line)}
@@ -229,7 +251,11 @@ textarea{resize:vertical;min-height:64px}
   </div></div>
 
   <div class="panel"><h3>活动日志</h3><div class="pbody">
-    <div class="log" id="log"><div class="ln"><span class="t"></span>▸ 就绪 — 在此发起扫描与验证</div></div>
+    <div id="jobbelt" style="display:flex;flex-wrap:wrap;gap:6px;margin:6px 0 2px;align-items:center">
+      <span class="hint">并行池（<span id="jobCount">0/3</span>）· 每任务一卡，独立日志与 暂停/继续/取消</span>
+    </div>
+    <div id="cards"></div>
+    <div class="log" id="log"><div class="ln"><span class="t"></span>▸ 系统事件 — 任务日志在各任务卡片内</div></div>
     <div class="footer">
       <button class="btn ghost small" id="exp">导出 markdown 报告</button>
       <button class="btn ghost small" id="clr">清空日志</button>
@@ -275,11 +301,67 @@ function toast(msg){const t=$("toast");t.textContent=msg;t.classList.add("show")
 function log(cls,msg){const l=$("log");const ln=document.createElement("div");ln.className="ln";
   ln.innerHTML=`<span class="t">${new Date().toTimeString().slice(0,8)}</span><span class="${cls}">${esc(msg)}</span>`;
   l.appendChild(ln);l.scrollTop=l.scrollHeight;}
-function setBusy(b){$("go").disabled=b;$("ago").disabled=b;$("nlpGo").disabled=b;$("stop").disabled=!b;}
-function startPoll(){clearInterval(pollT);pollT=setInterval(poll,900);}
-function jobHead(j){return `<div class="ln"><span class="t">▶ 当前任务</span>
-  <span class="${j.kind==="agent"?"ac":"ok"}">${esc(j.kind)} ${esc(j.job_id)} · ${esc(j.status)}</span>
-  ${j.session_id?`<span class="cmd">会话 ${esc(j.session_id)}</span>`:""}</div>`;}
+let pool={max:3,list:[]};
+const JC={running:"#4ade80",paused:"#fbbf24",done:"#38bdf8",error:"#f87171",cancelled:"#94a3b8"};
+const JL={running:"运行",paused:"已暂停",done:"完成",error:"错误",cancelled:"已取消"};
+async function refreshJobs(){try{const r=await api("/api/jobs");pool.max=(r.max_running||3);pool.list=r.jobs||[];
+  const act=pool.list.filter(j=>j.status==="running"||j.status==="paused");
+  $("jobCount").textContent=act.length+"/"+pool.max;
+  const wrap=$("cards");const ids=new Set(pool.list.map(j=>j.job_id));
+  for(const el of [...wrap.children]){if(!ids.has(el.dataset.id))el.remove();}
+  for(const j of pool.list.slice(-14))renderCard(j);
+  for(const j of pool.list)refreshCard(j);
+  for(const j of act)pollJob(j.job_id);
+  if(!act.length&&pollT){clearInterval(pollT);pollT=null;}
+}catch(e){}}
+function renderCard(j){
+  const wrap=$("cards");
+  let card=wrap.querySelector(`[data-id="${j.job_id}"]`);
+  if(!card){card=document.createElement("div");card.className="jcard";card.dataset.id=j.job_id;
+    card.innerHTML=`<div class="jc-head"></div><div class="jc-btns"></div>
+      <div class="jc-adjust" hidden><textarea class="jadjust" rows="2" placeholder="在本任务上调整/继续…"></textarea><button class="jbtn ok" data-op="resume">▶ 继续</button></div>
+      <div class="jc-log"><div class="ln"><span class="t"></span>等待输出…</div></div>`;
+    card.addEventListener("click",onCard);wrap.appendChild(card);}
+}
+function refreshCard(j){
+  const card=$("cards").querySelector(`[data-id="${j.job_id}"]`);if(!card)return;
+  const col=JC[j.status]||"#94a3b8";
+  card.querySelector(".jc-head").innerHTML=`<b>${j.kind==="agent"?"🧠 Agent":"🔍 Scan"} ${esc(j.kind)}</b>
+    <span class="jc-id">${esc(j.job_id)}</span>
+    <span class="jchip" style="border:1px solid ${col};color:${col}">${JL[j.status]||j.status}</span>`;
+  card.querySelector(".jc-btns").innerHTML=
+    (j.kind==="agent"&&j.status==="running"?'<button class="jbtn" data-op="interrupt" title="中断（保留会话，可在本卡输入后继续）">⏸ 中断</button>':"")+
+    (j.status==="running"||j.status==="paused"?'<button class="jbtn warn" data-op="cancel">✖ 取消</button>':"")+
+    (j.status==="done"||j.status==="error"?'<button class="jbtn" data-op="clear">🗑 清除</button>':"");
+  card.querySelector(".jc-adjust").hidden=j.status!=="paused";
+  card.style.borderColor=j.status==="running"?"#4ade80":(j.status==="error"?"#f87171":"var(--line)");
+}
+async function pollJob(jid){
+  try{const j=await api("/api/jobs/"+jid);
+    const card=$("cards").querySelector(`[data-id="${jid}"]`);if(!card)return;
+    const logEl=card.querySelector(".jc-log"),key=jid+":"+j.log.length;
+    if(logEl.dataset.key!==key){logEl.innerHTML=j.log.join("<br>")||'<div class="ln"><span class="t"></span>等待输出…</div>';
+      logEl.dataset.key=key;logEl.scrollTop=logEl.scrollHeight;}
+    if(j.status==="done"&&j.result&&j.result.total!=null&&!card.querySelector(".jc-done")){
+      const d=document.createElement("div");d.className="jc-done";
+      d.textContent=`完成 — ${j.result.total||0} finding · 已复现 ${j.result.confirmed||0} · 未复现 ${j.result.refuted||0} · 待复核 ${j.result.unverifiable||0}`;
+      logEl.appendChild(d);loadAssets();}
+  }catch(e){}}
+async function onCard(e){
+  const btn=e.target.closest("button[data-op]");if(!btn)return;
+  const card=e.target.closest(".jcard"),jid=card.dataset.id,op=btn.dataset.op;
+  try{
+    if(op==="interrupt"){await api("/api/jobs/"+jid+"/interrupt",{method:"POST"});toast(jid+" 已中断 —— 在本卡输入调整后点「继续」");}
+    else if(op==="resume"){const text=(card.querySelector(".jadjust").value||"").trim();
+      await api("/api/jobs/"+jid+"/resume",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({text,model:agentModel(),fence:agentFence()})});
+      card.querySelector(".jadjust").value="";toast(jid+" 已继续");}
+    else if(op==="cancel"){await api("/api/jobs/"+jid+"/cancel",{method:"POST"});toast(jid+" 已取消");}
+    else if(op==="clear"){card.remove();return;}
+    setTimeout(refreshJobs,500);
+  }catch(er){toast("失败："+er.message);}
+}
+function setBusy(b){refreshJobs();}
+function startPoll(){if(!pollT)pollT=setInterval(refreshJobs,900);}
 async function api(path,opts){const r=await fetch(path,opts);const j=await r.json();
   if(!r.ok)throw new Error(j.error||("HTTP "+r.status));return j;}
 function riskBadge(r){return `<span class="badge" style="color:${RC[r]};border-color:${RC[r]}"><span class="dotb" style="background:${RC[r]}"></span>${RL[r]}</span>`;}
@@ -319,17 +401,15 @@ $("ftype").addEventListener("change",()=>{
   const v=$("ftype").value; $("scanOpts").hidden=v!=="scan"; $("verifyOpts").hidden=v!=="verify";});
 $("advTgl").addEventListener("click",()=>{const o=$("advOpts"),b=$("advTgl");
   o.hidden=!o.hidden;b.textContent=o.hidden?"高级选项 ▸":"高级选项 ▾";});
-$("stop").addEventListener("click",async()=>{if(curJob){await api("/api/jobs/"+curJob+"/cancel",{method:"POST"});}});
 $("go").addEventListener("click",runCmd);
 $("nlpGo").addEventListener("click",async()=>{
   const t=$("nlpInput").value.trim();if(!t)return toast("输入指令");
-  if($("go").disabled)return toast("上一个任务还在跑，先完成或停止它");
   try{
     const r=await api("/api/nlp",{method:"POST",headers:{"Content-Type":"application/json"},
       body:JSON.stringify({text:t})});
     if(r.error){log("err",r.error);return toast(r.error);}
-    if(r.job_id){curJob=r.job_id;log("ac","指令 → "+r.kind+" "+r.job_id);
-      setBusy(true);startPoll();await poll();}
+    if(r.job_id){log("ac","指令 → "+r.kind+" "+r.job_id);
+      setBusy(true);startPoll();refreshJobs();}
     else if(r.ok){toast(r.message||"完成");log("ok",r.message||"完成");
       if(r.stats)log("ok",`资产 ${r.stats.total_assets} · 确认漏洞 ${r.stats.total_confirmed} · 待复核 ${r.stats.pending_review}`);
       loadAssets();}
@@ -338,27 +418,18 @@ $("nlpGo").addEventListener("click",async()=>{
 });
 $("ago").addEventListener("click",async()=>{
   const g=$("agoal").value.trim();if(!g)return toast("输入任务目标");
-  if($("go").disabled)return toast("上一个任务还在跑，先完成或停止它");
   try{
     const r=await api("/api/jobs",{method:"POST",headers:{"Content-Type":"application/json"},
       body:JSON.stringify({type:"agent",goal:g,resume_session:$("ause").checked?"last":"",
         model:agentModel(),fence:agentFence()})});
     if(r.error)return toast(r.error);
-    curJob=r.job_id;log("ac","🧠 已交给 Claude Agent "+r.job_id+($("ause").checked?"（续上一会话）":""));
-    setBusy(true);startPoll();await poll();
+    log("ac","🧠 已交给 Claude Agent "+r.job_id+($("ause").checked?"（续上一会话）":""));
+    setBusy(true);startPoll();refreshJobs();
   }catch(e){log("err",e.message);}
 });
 function agentModel(){return $("amodel").value;}
 function agentFence(){return $("afence").checked?($("atools").value||"").trim():"";}
 $("afence").addEventListener("change",()=>{$("atools").disabled=!$("afence").checked;});
-$("aint").addEventListener("click",async()=>{if(!curJob)return;
-  try{await api("/api/jobs/"+curJob+"/interrupt",{method:"POST"});toast("已中断，可输入调整后继续");}
-  catch(e){toast("失败："+e.message);}});
-$("ares").addEventListener("click",async()=>{if(!curJob)return;
-  const text=$("aadj").value.trim();
-  try{await api("/api/jobs/"+curJob+"/resume",{method:"POST",headers:{"Content-Type":"application/json"},
-    body:JSON.stringify({text,model:agentModel(),fence:agentFence()})});$("aadj").value="";toast("已继续");}
-  catch(e){toast("失败："+e.message);}});
 $("exp").addEventListener("click",()=>{const a=document.createElement("a");
   a.href="/api/report?full=1&download=1";a.download="hexstrike-report.md";document.body.appendChild(a);a.click();a.remove();
   log("ok","报告已导出");});
@@ -376,36 +447,15 @@ $("bMerge").addEventListener("click",async()=>{const ks=selectedKeys();if(ks.len
 
 async function runCmd(){
   const tgt=$("tgt").value.trim();const type=$("ftype").value;
-  if($("go").disabled)return;
   const body={type};
   if(type==="scan"){body.target=tgt;if(!tgt)return toast("填目标");body.severity=$("sev").value.trim();body.tags=$("tags").value.trim();
     body.template=$("tmpl").value.trim();body.additional_args=$("extra").value.trim();}
   else{const js=$("fjs").value.trim();if(!js)return toast("填 findings JSON");body.findings_json=js;}
-  setBusy(true);
-  const j=await api("/api/jobs",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
-  curJob=j.job_id;log("ac","已提交 "+j.kind+" "+j.job_id);
-  startPoll();
-  await poll();
-}
-async function poll(){
-  try{const j=await api("/api/jobs/"+curJob);
-    $("log").innerHTML=jobHead(j)+j.log.join("<br>");
-    $("log").scrollTop=$("log").scrollHeight;
-    updateAgentCtl(j);
-    if(j.status==="done"){clearInterval(pollT);pollT=null;setBusy(false);
-      updateAgentCtl(j);
-      if(j.result){log("ok","完成 — "+(j.result.total||0)+" finding，已复现 "+(j.result.confirmed||0)
-         +"，未复现 "+(j.result.refuted||0)+"，待复核 "+(j.result.unverifiable||0));}
-      loadAssets();curJob=null;}
-    else if(j.status==="error"||j.status==="cancelled"){clearInterval(pollT);pollT=null;setBusy(false);curJob=null;}
-  }catch(e){clearInterval(pollT);pollT=null;setBusy(false);
-    $("agentCtl").style.display="none";curJob=null;log("err",e.message);}
-}
-function updateAgentCtl(j){
-  const ctl=$("agentCtl");
-  if(j.kind==="agent"){ctl.style.display="flex";
-    $("aint").disabled=j.status!=="running";$("ares").disabled=j.status!=="paused";}
-  else ctl.style.display="none";
+  try{
+    const j=await api("/api/jobs",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+    log("ac","已提交 "+j.kind+" "+j.job_id);
+    setBusy(true);startPoll();refreshJobs();
+  }catch(e){toast(e.message);}
 }
 let MENU=[],skillCtx=null;
 async function loadMenu(){try{const r=await api("/api/menu");MENU=r.items||[];}catch(e){}}
@@ -583,6 +633,7 @@ document.addEventListener("keydown",e=>{if(e.key==="Escape"){$("skillMenu").hidd
 loadMenu();
 ["agoal","aadj","nlpInput"].forEach(attachSkill);
 loadAssets();
+refreshJobs();
 </script>
 </body></html>"""
 
@@ -603,6 +654,8 @@ class Job:
 
 
 class _Jobs:
+    MAX_RUNNING = int(os.environ.get("HEXSTRIKE_CONCURRENCY", "3"))  # 并行池上限（默认 3）
+
     def __init__(self):
         self.store = {}
         self.lock = threading.Lock()
@@ -618,18 +671,27 @@ class _Jobs:
     def get(self, jid):
         return self.store.get(jid)
 
-    def active_job(self):
-        """单任务模型：任一 running/paused 的 job 都算活动任务，阻塞新任务。"""
-        for j in self.store.values():
-            if j.status in ("running", "paused"):
-                return j
-        return None
+    def running_jobs(self):
+        """当前 running/paused 的任务列表（并行池内所有在跑的任务）。"""
+        with self.lock:
+            return [j for j in self.store.values() if j.status in ("running", "paused")]
+
+    def can_accept(self):
+        return len(self.running_jobs()) < self.MAX_RUNNING
 
     def render(self, job):
         return {"job_id": job.job_id, "kind": job.kind, "status": job.status,
                 "log": job.log, "result": job.result, "error": job.error,
                 "session_id": job.session_id,
                 "resumable": bool(job.kind == "agent" and job.session_id)}
+
+    def render_list(self):
+        with self.lock:
+            allj = sorted(self.store.values(), key=lambda j: j.job_id)
+        return [{"job_id": j.job_id, "kind": j.kind, "status": j.status,
+                 "label": j.label,
+                 "resumable": bool(j.kind == "agent" and j.session_id)}
+                for j in allj]
 
 
 def _client():
@@ -1330,6 +1392,8 @@ class _Handler(BaseHTTPRequestHandler):
                 self.wfile.write(body2)
                 return
             self._json({"report": body, "stats": _snapshot_db.stats()})
+        elif route == "/api/jobs":
+            self._json({"jobs": _jobs.render_list(), "max_running": _jobs.MAX_RUNNING})
         elif route.startswith("/api/jobs/"):
             jid = route.split("/")[-1]
             job = _jobs.get(jid)
@@ -1357,9 +1421,9 @@ class _Handler(BaseHTTPRequestHandler):
         except json.JSONDecodeError:
             return self._json({"error": "请求体不是合法 JSON"}, 400)
         if route == "/api/jobs":
-            active = _jobs.active_job()
-            if active:
-                return self._json({"error": f"已有活动任务（{active.kind} {active.job_id} · {active.status}），先完成或停止它再发起新任务"}, 409)
+            if not _jobs.can_accept():
+                n = len(_jobs.running_jobs())
+                return self._json({"error": f"并行池已满（{n}/{_jobs.MAX_RUNNING} 在跑），等一个完成或停掉再发新任务"}, 409)
             kind = body.get("type", "scan")
             job = _jobs.create(kind, kind)
             if kind == "agent" and (body.get("resume_session") or ""):
@@ -1484,9 +1548,9 @@ class _Handler(BaseHTTPRequestHandler):
                         if not fjs or fjs == "[]":
                             return self._json({"error": "该目标快照里没有可复验 finding，可在指令中直接贴 findings JSON"}, 400)
                     p["findings_json"] = fjs
-                active = _jobs.active_job()
-                if active:
-                    self._json({"error": f"已有活动任务（{active.kind} {active.job_id} · {active.status}），先完成或停止它再扫描"}, 409)
+                if not _jobs.can_accept():
+                    n = len(_jobs.running_jobs())
+                    self._json({"error": f"并行池已满（{n}/{_jobs.MAX_RUNNING} 在跑），等一个完成或停掉再发新任务"}, 409)
                     return
                 job = _jobs.create(op, op)
                 _start_job(job, p)

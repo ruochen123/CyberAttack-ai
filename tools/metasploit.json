@@ -1,7 +1,10 @@
 {
-  "binary": "msfconsole",
+  "binary": "docker",
+  "backend": "docker",
+  "container": "hexstrike-linux",
+  "container_binary": "msfconsole",
   "category": "exploitation",
-  "description": "Metasploit Framework exploitation",
+  "description": "Metasploit Framework exploitation (Linux sidecar)",
   "timeout": 600,
   "custom": true,
   "name": "metasploit"

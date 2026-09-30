@@ -5,6 +5,7 @@
   "timeout": 600,
   "command": [
     "nuclei",
+    "-duc",
     "-u",
     {
       "param": "target"

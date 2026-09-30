@@ -10,11 +10,11 @@
 [![Security](https://img.shields.io/badge/Security-Penetration%20Testing-red.svg)](https://github.com/0x4m4/hexstrike-ai)
 [![MCP](https://img.shields.io/badge/MCP-Compatible-purple.svg)](https://github.com/0x4m4/hexstrike-ai)
 [![Version](https://img.shields.io/badge/Version-7.0.0-orange.svg)](https://github.com/0x4m4/hexstrike-ai/releases)
-[![Tools](https://img.shields.io/badge/Security%20Tools-67-brightgreen.svg)](https://github.com/0x4m4/hexstrike-ai)
+[![Tools](https://img.shields.io/badge/Security%20Tools-82-brightgreen.svg)](https://github.com/0x4m4/hexstrike-ai)
 [![Agents](https://img.shields.io/badge/AI%20Agents-12%2B-purple.svg)](https://github.com/0x4m4/hexstrike-ai)
 [![Stars](https://img.shields.io/github/stars/0x4m4/hexstrike-ai?style=social)](https://github.com/0x4m4/hexstrike-ai)
 
-**Advanced AI-powered penetration testing MCP framework — MCP stdio, self-contained single process, 67 security tools via `tools/*.json` templates**
+**Advanced AI-powered penetration testing MCP framework — MCP stdio, self-contained single process, 82 security tools via `tools/*.json` templates**
 
 [📋 What's New](#whats-new-in-v60) • [🏗️ Architecture](#architecture-overview) • [🚀 Installation](#installation) • [🛠️ Features](#features) • [🤖 AI Agents](#ai-agents) • [📡 API Reference](#api-reference)
 
@@ -28,7 +28,7 @@
 >
 > - `hexstrike_server.py`（Flask 服务）**已于 2026-09-17 删除**（git 历史可恢复），不加载、不要启动。下文 Installation / API Reference 章节里的 `python3 hexstrike_server.py` 等步骤对本仓库**均无效**。
 > - 唯一入口是 `hexstrike_mcp.py`，由 Claude Code 经 MCP(stdio) 拉起，各工具在本地 `subprocess` 执行 —— **无需单独起服务，也不监听 HTTP 端口**。
-> - 工具层已从"硬编码"改为 `tools/*.json` 模板（当前 67 个），新增工具只写 JSON + 把 binary 装进 PATH。
+> - 工具层已从"硬编码"改为 `tools/*.json` 模板（当前 82 个），新增工具只写 JSON + 把 binary 装进 PATH。
 >
 > **请以仓库根 [`CLAUDE.md`](CLAUDE.md) 为准**（关键文件 / 加新工具 / MCP 集成 / 已知坑）。改造文档：[`docs/evidence-layer-design.md`](docs/evidence-layer-design.md)（证据验证层）、[`docs/cross-task-memory-design.md`](docs/cross-task-memory-design.md)（资产快照记忆）、[`docs/web-console.md`](docs/web-console.md)（Web 控制台）。
 
@@ -90,7 +90,7 @@ graph TD
     E --> N[Progress Visualization]
     E --> O[Vulnerability Cards]
     
-    B --> P[67 Security Tools (tools/*.json templates)]
+    B --> P[82 Security Tools (tools/*.json templates)]
     P --> Q[Network Tools - 25+]
     P --> R[Web App Tools - 40+]
     P --> S[Cloud Tools - 20+]
@@ -267,7 +267,7 @@ Configure VS Code settings in `.vscode/settings.json`:
 
 ### Security Tools Arsenal
 
-**67 Security Tools (command templates in `tools/*.json`):**
+**82 Security Tools (command templates in `tools/*.json`):**
 
 <details>
 <summary><b>🔍 Network Reconnaissance & Scanning (25+ Tools)</b></summary>
@@ -508,7 +508,7 @@ Configure VS Code settings in `.vscode/settings.json`:
 
 > v7.0 exposes **no HTTP service** (`hexstrike_server.py` is deleted). It has two surfaces:
 
-**1. MCP tools (stdio)** — registered in `hexstrike_mcp.py` from command templates in `tools/*.json` (67 tools) through a three-layer pipeline: `ToolRegistry` (JSON config) → `build_tool_command` → `LocalExecutionEngine` (subprocess). Additional capability tools registered alongside:
+**1. MCP tools (stdio)** — registered in `hexstrike_mcp.py` from command templates in `tools/*.json` (82 tools) through a three-layer pipeline: `ToolRegistry` (JSON config) → `build_tool_command` → `LocalExecutionEngine` (subprocess). Additional capability tools registered alongside:
 - `snapshot_update` / `query_assets` / `snapshot_report` — asset snapshot memory (`memory.py`)
 - `verify_finding` / `verify_findings` / `nuclei_scan_and_verify` — evidence verification (`verifiers.py`)
 - `start_dashboard` / `stop_dashboard` — web console lifecycle (`dashboard.py`)
@@ -531,7 +531,7 @@ Configure VS Code settings in `.vscode/settings.json`:
 
 ### Common MCP Tools
 
-The authoritative tool list lives in `tools/*.json` (67 templates: binary/category/command template/aliases/timeout). Lookups go through `ToolRegistry.get()` (exact-name matching for names containing `-`/`_`). Representative existing tools: `amass`, `autorecon`, `arp-scan`, `dalfox`, `dirsearch`, `nuclei`, `sqlmap`, `ffuf`, `gobuster`, `wpscan`, `nmap` (not limited to these; see `tools/`).
+The authoritative tool list lives in `tools/*.json` (82 templates: binary/category/command template/aliases/timeout). Lookups go through `ToolRegistry.get()` (exact-name matching for names containing `-`/`_`). Representative existing tools: `amass`, `autorecon`, `arp-scan`, `dalfox`, `dirsearch`, `nuclei`, `sqlmap`, `ffuf`, `gobuster`, `wpscan`, `nmap` (not limited to these; see `tools/`).
 
 ---
 
@@ -566,7 +566,7 @@ AI Agent: "Thank you for clarifying ownership and intent. To proceed with a pene
 
 ## HexStrike AI v7.0 (current)
 
-v7.0 is the **current release** and is already implemented (2026-09): a self-contained single-process MCP service (`hexstrike_mcp.py`, stdio) built on the three-layer pipeline `ToolRegistry` (67 templates in `tools/*.json`) → `build_tool_command` → `LocalExecutionEngine`. Key additions over the v6.0 Flask architecture: evidence verification layer (`verifiers.py`), cross-task asset snapshot memory (`memory.py`), and the local web console (`dashboard.py`, loopback only). Architecture and operating details: see `CLAUDE.md` and `docs/`.
+v7.0 is the **current release** and is already implemented (2026-09): a self-contained single-process MCP service (`hexstrike_mcp.py`, stdio) built on the three-layer pipeline `ToolRegistry` (82 templates in `tools/*.json`) → `build_tool_command` → `LocalExecutionEngine`. Key additions over the v6.0 Flask architecture: evidence verification layer (`verifiers.py`), cross-task asset snapshot memory (`memory.py`), and the local web console (`dashboard.py`, loopback only). Architecture and operating details: see `CLAUDE.md` and `docs/`.
 
 
 ---
@@ -707,7 +707,7 @@ MIT License - see LICENSE file for details.
 
 ### **📊 Project Statistics**
 
-- **67 Security Tools** - Command templates in `tools/*.json` (see `tools/`)
+- **82 Security Tools** - Command templates in `tools/*.json` (see `tools/`)
 - **12+ AI Agents** - Autonomous decision-making and workflow management
 - **4000+ Vulnerability Templates** - Nuclei integration with extensive coverage
 - **35+ Attack Categories** - From web apps to cloud infrastructure

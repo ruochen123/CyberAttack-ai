@@ -1,0 +1,32 @@
+{
+  "binary": "naabu",
+  "category": "network",
+  "description": "Fast port scanner (projectdiscovery)",
+  "timeout": 300,
+  "command": [
+    "naabu",
+    "-host",
+    {
+      "param": "host",
+      "alt_param": "target",
+      "quote": true
+    },
+    {
+      "param": "ports",
+      "flag": "-p",
+      "quote": true
+    },
+    {
+      "param": "top_ports",
+      "flag": "-top-ports"
+    },
+    {
+      "param": "rate",
+      "flag": "-rate"
+    },
+    {
+      "param": "additional_args"
+    }
+  ],
+  "name": "naabu"
+}

@@ -1,0 +1,29 @@
+{
+  "binary": "docker",
+  "backend": "docker",
+  "container": "hexstrike-linux",
+  "container_binary": "redis-cli",
+  "category": "exploitation",
+  "description": "Redis client (unauthorized access check / key dump) in Linux sidecar",
+  "timeout": 60,
+  "command": [
+    "redis-cli",
+    "-h",
+    {
+      "param": "target",
+      "quote": true
+    },
+    "-p",
+    {
+      "param": "port",
+      "default": "6379"
+    },
+    "-r",
+    "1",
+    {
+      "param": "command",
+      "default": "info server"
+    }
+  ],
+  "name": "redis"
+}

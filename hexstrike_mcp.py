@@ -405,6 +405,19 @@ class ToolRegistry:
 _tool_registry = ToolRegistry()
 
 
+def _docker_exec(tool_name: str, cmd: str) -> str:
+    """Wrap a rendered command in `docker exec -i` for backend:'docker' tools.
+
+    Sends the command into the fixed Linux sidecar container (default
+    hexstrike-linux). Configs with `backend: "docker"` in tools/*.json.
+    """
+    cfg = _tool_registry.get(tool_name)
+    if not cfg or cfg.get("backend") != "docker":
+        return cmd
+    container = cfg.get("container", "hexstrike-linux")
+    return f"docker exec -i {container} {cmd}"
+
+
 def build_tool_command(tool_name: str, params: dict) -> str:
     """Build the shell command for any supported tool from its parameters.
 
@@ -421,7 +434,7 @@ def build_tool_command(tool_name: str, params: dict) -> str:
     # ── Step 1: Try ToolRegistry (JSON configs) ──
     cmd = _tool_registry.build_command(tool_name, p)
     if cmd:
-        return cmd
+        return _docker_exec(tool_name, cmd)
 
     # ── Step 2: Complex tools (custom logic) ──
     t = tool_name.lower().replace("-", "")
@@ -479,7 +492,7 @@ def build_tool_command(tool_name: str, params: dict) -> str:
         opts = p.get("options", {})
         opt_str = " ".join(f"set {k} {v};" for k, v in opts.items())
         cmd = f'msfconsole -q -x "use {module}; {opt_str} run; exit"'
-        return cmd
+        return _docker_exec(tool_name, cmd)
 
     # ── Step 3: Generic web proxy (zap, burpsuite, browseragent, etc.) ──
     if t in ("zap", "burpsuite", "burpsuitealternative", "browseragent",
@@ -5636,6 +5649,665 @@ def setup_mcp_server(hexstrike_client: HexStrikeClient) -> FastMCP:
             logger.error(f"❌ Failed to format tool output for {tool_name}")
 
         return result
+
+    # ============================================================================
+    # WEB VULN & OSINT EXPANSION (2026-09-30)
+    # searchsploit/commix/xsstrike/sslyze/dnsx/naabu/whatweb/theharvester
+    # ============================================================================
+
+    @mcp.tool()
+    def searchsploit_search(term: str = "", cve: str = "", title_only: bool = False,
+                            exclude: bool = False, additional_args: str = "") -> Dict[str, Any]:
+        """
+        Search the offline Exploit-DB for exploits and vulnerable software (searchsploit).
+
+        Args:
+            term: Search term(s) (product/vulnerability name)
+            cve: CVE identifier to look up (e.g. CVE-2021-44228)
+            title_only: Only look at exploit titles (-t)
+            exclude: Exclude terms whose exploit title matches (-e)
+            additional_args: Additional searchsploit arguments
+
+        Returns:
+            Matching exploit list from the local Exploit-DB database
+        """
+        data = {
+            "term": term,
+            "cve": cve,
+            "title_only": title_only,
+            "exclude": exclude,
+            "additional_args": additional_args
+        }
+        logger.info(f"💥 searchsploit: {'CVE ' + cve if cve else term}")
+        try:
+            return hexstrike_client.execute_tool_async("searchsploit", "api/tools/searchsploit", data) or {"success": False, "error": "empty"}
+        except RuntimeError as e:
+            return {"success": False, "error": str(e)}
+
+    @mcp.tool()
+    def commix_scan(url: str, data: str = "", cookie: str = "", level: str = "",
+                    technique: str = "", additional_args: str = "") -> Dict[str, Any]:
+        """
+        Exploit command injection via automated injection testing (Commix).
+
+        Args:
+            url: Target URL
+            data: POST data to test (e.g. 'id=1&name=test')
+            cookie: Session cookie(s) to send
+            level: Depth of payload injection (1-3)
+            technique: Injection technique to use
+            additional_args: Additional Commix arguments
+
+        Returns:
+            Command injection exploitation results
+        """
+        data = {
+            "url": url,
+            "data": data,
+            "cookie": cookie,
+            "level": level,
+            "technique": technique,
+            "additional_args": additional_args
+        }
+        logger.info(f"⚡ Commix injection test: {url}")
+        try:
+            return hexstrike_client.execute_tool_async("commix", "api/tools/commix", data) or {"success": False, "error": "empty"}
+        except RuntimeError as e:
+            return {"success": False, "error": str(e)}
+
+    @mcp.tool()
+    def xsstrike_scan(url: str, data: str = "", crawl: bool = False, params: str = "",
+                      level: str = "", timeout: str = "", path: bool = False, proxy: bool = False,
+                      additional_args: str = "") -> Dict[str, Any]:
+        """
+        Detect and exploit reflected/DOM XSS (XSStrike).
+
+        Args:
+            url: Target URL
+            data: POST parameters to test
+            crawl: Crawl the target for parameter discovery
+            params: Force testing specific parameters
+            level: Crawling depth
+            timeout: HTTP request timeout (seconds)
+            path: Only check given paths
+            proxy: Route traffic through proxy
+            additional_args: Additional XSStrike arguments
+
+        Returns:
+            XSS detection results with payloads
+        """
+        data = {
+            "url": url,
+            "data": data,
+            "crawl": crawl,
+            "params": params,
+            "level": level,
+            "timeout": timeout,
+            "path": path,
+            "proxy": proxy,
+            "additional_args": additional_args
+        }
+        logger.info(f"🎯 XSStrike scan: {url}")
+        try:
+            return hexstrike_client.execute_tool_async("xsstrike", "api/tools/xsstrike", data) or {"success": False, "error": "empty"}
+        except RuntimeError as e:
+            return {"success": False, "error": str(e)}
+
+    @mcp.tool()
+    def sslyze_scan(target: str, port: int = 443, additional_args: str = "") -> Dict[str, Any]:
+        """
+        Deep TLS/SSL configuration and protocol analysis (sslyze).
+
+        Args:
+            target: Hostname or IP
+            port: TLS port to test (default 443)
+            additional_args: Additional sslyze arguments (e.g. --certinfo --hsts)
+
+        Returns:
+            TLS protocol/cipher/certificate findings
+        """
+        data = {
+            "hostport": f"{target}:{port}",
+            "additional_args": additional_args
+        }
+        logger.info(f"🔐 sslyze: {target}:{port}")
+        try:
+            return hexstrike_client.execute_tool_async("sslyze", "api/tools/sslyze", data) or {"success": False, "error": "empty"}
+        except RuntimeError as e:
+            return {"success": False, "error": str(e)}
+
+    @mcp.tool()
+    def dnsx_lookup(domain: str, a: bool = True, aaaa: bool = False, cname: bool = False,
+                    mx: bool = False, ns: bool = False, txt: bool = False, soa: bool = False,
+                    ptr: bool = False, additional_args: str = "") -> Dict[str, Any]:
+        """
+        Fast DNS resolution and record enumeration (dnsx).
+
+        Args:
+            domain: Domain to query
+            a: Query A records
+            aaaa: Query AAAA records
+            cname: Query CNAME records
+            mx: Query MX records
+            ns: Query NS records
+            txt: Query TXT records
+            soa: Query SOA records
+            ptr: Query PTR records
+            additional_args: Additional dnsx arguments
+
+        Returns:
+            DNS records for the target domain
+        """
+        data = {
+            "domain": domain,
+            "a": a,
+            "aaaa": aaaa,
+            "cname": cname,
+            "mx": mx,
+            "ns": ns,
+            "txt": txt,
+            "soa": soa,
+            "ptr": ptr,
+            "additional_args": additional_args
+        }
+        logger.info(f"🌐 dnsx records for: {domain}")
+        try:
+            return hexstrike_client.execute_tool_async("dnsx", "api/tools/dnsx", data) or {"success": False, "error": "empty"}
+        except RuntimeError as e:
+            return {"success": False, "error": str(e)}
+
+    @mcp.tool()
+    def naabu_port_scan(target: str, ports: str = "", top_ports: str = "",
+                        rate: str = "", additional_args: str = "") -> Dict[str, Any]:
+        """
+        Fast TCP port scan (naabu).
+
+        Args:
+            target: Host or CIDR range
+            ports: Specific ports or ranges (e.g. 80,443,8000-9000)
+            top_ports: Scan the top N ports
+            rate: Packets per second
+            additional_args: Additional naabu arguments
+
+        Returns:
+            Open ports on the target
+        """
+        data = {
+            "host": target,
+            "ports": ports,
+            "top_ports": top_ports,
+            "rate": rate,
+            "additional_args": additional_args
+        }
+        logger.info(f"🔎 naabu port scan: {target}")
+        try:
+            return hexstrike_client.execute_tool_async("naabu", "api/tools/naabu", data) or {"success": False, "error": "empty"}
+        except RuntimeError as e:
+            return {"success": False, "error": str(e)}
+
+    @mcp.tool()
+    def whatweb_fingerprint(url: str, aggression: str = "3", additional_args: str = "") -> Dict[str, Any]:
+        """
+        Web technology and CMS fingerprinting (WhatWeb).
+
+        Args:
+            url: Target URL
+            aggression: Aggression level (1 stealthy - 4 aggressive; default 3)
+            additional_args: Additional WhatWeb arguments (e.g. --log-json)
+
+        Returns:
+            Identified web technologies, CMS, version fingerprints
+        """
+        data = {
+            "url": url,
+            "aggression": aggression,
+            "additional_args": additional_args
+        }
+        logger.info(f"🕵️ WhatWeb fingerprint: {url}")
+        try:
+            return hexstrike_client.execute_tool_async("whatweb", "api/tools/whatweb", data) or {"success": False, "error": "empty"}
+        except RuntimeError as e:
+            return {"success": False, "error": str(e)}
+
+    @mcp.tool()
+    def msf_console_run(resource: str, additional_args: str = "") -> Dict[str, Any]:
+        """
+        Run a Metasploit resource script non-interactively in the Linux sidecar.
+
+        Args:
+            resource: msfconsole commands (use/set/run/exit), e.g. 'use auxiliary/scanner/http/http_version; set RHOSTS example.com; run; exit'
+            additional_args: Extra msfconsole arguments
+
+        Returns:
+            Metasploit console output
+        """
+        data = {
+            "resource": resource + ("; exit" if not resource.strip().endswith("exit") else ""),
+            "additional_args": additional_args
+        }
+        logger.info(f"🎛️ msfconsole resource run (Linux sidecar)")
+        try:
+            return hexstrike_client.execute_tool_async("msfconsole", "api/tools/msfconsole", data) or {"success": False, "error": "empty"}
+        except RuntimeError as e:
+            return {"success": False, "error": str(e)}
+
+    @mcp.tool()
+    def privesc_extract(dest: str = "/Users/zhj/hexstrike-ai/privesc/") -> Dict[str, Any]:
+        """
+        Extract local privilege-escalation scripts from the Linux sidecar to a local dir.
+
+        Args:
+            dest: Destination directory (default ~/hexstrike-ai/privesc/)
+
+        Returns:
+            Paths of linpeas/linux-exploit-suggester/pspy copied out for staging on a target host
+        """
+        data = {"dest": dest}
+        logger.info(f"📦 privesc scripts extract -> {dest}")
+        try:
+            return hexstrike_client.execute_tool_async("privesc_extract", "api/tools/privesc_extract", data) or {"success": False, "error": "empty"}
+        except RuntimeError as e:
+            return {"success": False, "error": str(e)}
+
+    @mcp.tool()
+    def remote_exec(host: str, script: str = "", command: str = "", username: str = "root", port: int = 22,
+                    ssh_key: str = "", password: str = "", extra_args: str = "",
+                    remote_path: str = "", timeout: int = 90) -> Dict[str, Any]:
+        """
+        Run a privesc script or arbitrary command on a compromised Linux host over SSH (paramiko).
+
+        Args:
+            host: Target IP or hostname
+            script: linpeas | pspy | les (upload from ~/hexstrike-ai/privesc/ and run; run privesc_extract first if missing)
+            command: Arbitrary remote command when script is empty
+            username: SSH user (default root)
+            port: SSH port (default 22)
+            ssh_key: Path to SSH private key (default ~/.ssh/id_ed25519)
+            password: SSH password (omit to use key auth)
+            extra_args: Extra arguments passed to the script (e.g. linpeas '-a')
+            remote_path: Remote upload path (default /tmp/hx_<name>)
+            timeout: Seconds per command (default 90)
+
+        Returns:
+            Remote stdout/stderr/exit_code, or a connect/upload error
+        """
+        import remote
+        return remote.remote_exec(
+            host=host, script=script, command=command, username=username, port=port,
+            ssh_key=ssh_key, password=password, extra_args=extra_args,
+            remote_path=remote_path, timeout=timeout)
+
+    @mcp.tool()
+    def privesc_deliver(script: str = "linpeas", listen_port: int = 9999) -> Dict[str, Any]:
+        """
+        Generate copy-paste one-shot delivery commands for targets without SSH.
+
+        Args:
+            script: linpeas | pspy | les
+            listen_port: Local HTTP server port (default 9999)
+
+        Returns:
+            Attacker-side (python http.server) + target-side (curl) commands to hand-run
+        """
+        import remote
+        return remote.privesc_deliver(script=script, listen_port=listen_port)
+
+    @mcp.tool()
+    def oast_start(server: str = "interact.sh", proxy: str = "http://127.0.0.1:7897",
+                   timeout: int = 40) -> Dict[str, Any]:
+        """
+        Register an out-of-band (OAST) polling domain via interact.sh for blind-payload detection.
+
+        Args:
+            server: interactsh server (default interact.sh)
+            proxy: HTTP proxy for the client to poll callbacks (default local Clash)
+            timeout: Seconds to wait for the domain (default 40)
+
+        Returns:
+            The unique domain to embed in blind SSRF/XXE/XSS payloads (poll with oast_poll)
+        """
+        import oast
+        return oast.oast_start(server=server, proxy=proxy, timeout=timeout)
+
+    @mcp.tool()
+    def oast_poll(oast_id: str = "", limit: int = 100) -> Dict[str, Any]:
+        """
+        Fetch callbacks (DNS/HTTP) received on an interactive OAST domain.
+
+        Args:
+            oast_id: The session id from oast_start (defaults to the newest active one)
+            limit: Max interactions to return (default 100)
+
+        Returns:
+            interaction_count + parsed protocol/question/url records
+        """
+        import oast
+        return oast.oast_poll(oast_id=oast_id, limit=limit)
+
+    @mcp.tool()
+    def oast_stop(oast_id: str = "") -> Dict[str, Any]:
+        """
+        Stop a running interactsh polling client.
+
+        Args:
+            oast_id: Session id from oast_start (defaults to the newest active one)
+        """
+        import oast
+        return oast.oast_stop(oast_id=oast_id)
+
+    @mcp.tool()
+    def chisel_tunnel(local_port: int = 8080, socks_port: int = 1080,
+                      attacker_ip: str = "", serve_port: int = 9000) -> Dict[str, Any]:
+        """
+        Start a chisel reverse-connections server for pivoting into an internal network.
+
+        Args:
+            local_port: chisel server listen port (default 8080)
+            socks_port: local SOCKS5 port created when the target connects (default 1080)
+            attacker_ip: This machine's LAN IP (auto-detected if empty)
+            serve_port: Local HTTP port serving the linux chisel binary to the target (default 9000)
+
+        Returns:
+            SOCKS5 endpoint + attacker-side push command + target-side client command to paste
+        """
+        import tunnel
+        return tunnel.chisel_tunnel(local_port=local_port, socks_port=socks_port,
+                                    attacker_ip=attacker_ip, serve_port=serve_port)
+
+    @mcp.tool()
+    def chisel_stop(local_port: int = 8080) -> Dict[str, Any]:
+        """
+        Stop the running chisel reverse server.
+
+        Args:
+            local_port: The chisel server port started by chisel_tunnel (default 8080)
+        """
+        import tunnel
+        return tunnel.chisel_stop(local_port=local_port)
+
+    @mcp.tool()
+    def proxychains_scan(tool: str = "nmap", target: str = "", extra: str = "",
+                         socks_port: int = 1080, timeout: int = 180) -> Dict[str, Any]:
+        """
+        Run a scan tool through the tunnel SOCKS5 (proxychains4).
+
+        Args:
+            tool: nmap | nuclei | netexec | curl | searchsploit (default nmap)
+            target: Internal target to hit through the tunnel
+            extra: Extra tool arguments (e.g. '--top-ports 200' for nmap)
+            socks_port: The tunnel SOCKS5 port (default 1080)
+            timeout: Seconds before giving up (default 180)
+
+        Returns:
+            proxychains-wrapped command output (e.g. internal nmap/nuclei through the pivot)
+        """
+        import tunnel
+        return tunnel.proxychains_run(tool=tool, target=target, extra=extra,
+                                      socks_port=socks_port, timeout=timeout)
+
+    @mcp.tool()
+    def ysoserial_payload(gadget: str, command: str, additional_args: str = "") -> Dict[str, Any]:
+        """
+        Generate a Java deserialization gadget payload (ysoserial in the Linux sidecar).
+
+        Args:
+            gadget: Gadget chain name, e.g. CommonsCollections1 / Jdk7u21 / URLDNS
+            command: OS command executed on deserialization (e.g. 'curl http://oast/id')
+            additional_args: Extra ysoserial arguments (e.g. --encoder 'XStream' base64)
+
+        Returns:
+            Raw serialized payload bytes (base64-encode for web-delivery when needed)
+        """
+        data = {"gadget": gadget, "command": command, "additional_args": additional_args}
+        logger.info(f"💉 ysoserial gadget: {gadget}")
+        try:
+            return hexstrike_client.execute_tool_async("ysoserial", "api/tools/ysoserial", data) or {"success": False, "error": "empty"}
+        except RuntimeError as e:
+            return {"success": False, "error": str(e)}
+
+    @mcp.tool()
+    def nuclei_update_templates(additional_args: str = "") -> Dict[str, Any]:
+        """
+        Pull latest nuclei templates into the local templates dir (~/hexstrike-ai/nuclei-templates).
+
+        Args:
+            additional_args: Extra git pull flags (rarely needed)
+
+        Returns:
+            git pull result (new templates for XXE/SSTI/SSRF/Shiro etc. after each refresh)
+        """
+        import subprocess
+        try:
+            r = subprocess.run(f"git -C ~/hexstrike-ai/nuclei-templates pull --ff-only {additional_args}".strip(),
+                               shell=True, capture_output=True, text=True, timeout=120)
+            return {"success": r.returncode == 0, "exit_code": r.returncode,
+                    "stdout": (r.stdout or "")[-3000:], "stderr": (r.stderr or "")[-2000:]}
+        except Exception as e:
+            return {"success": False, "error": f"{type(e).__name__}: {e}"}
+
+    @mcp.tool()
+    def secretfinder_scan(url: str, output: str = "", additional_args: str = "") -> Dict[str, Any]:
+        """
+        Scan a JS URL for hardcoded secrets / API keys / tokens (SecretFinder).
+
+        Args:
+            url: Target JS url (e.g. https://site.com/app.js)
+            output: Optional output file path for found secrets
+            additional_args: Extra SecretFinder arguments (e.g. -e 'url,apikey')
+
+        Returns:
+            Lines with detected AWS keys, API keys, tokens, IPs/usernames etc.
+        """
+        data = {"url": url, "output": output, "additional_args": additional_args}
+        logger.info(f"🔍 SecretFinder: {url}")
+        try:
+            return hexstrike_client.execute_tool_async("secretfinder", "api/tools/secretfinder", data) or {"success": False, "error": "empty"}
+        except RuntimeError as e:
+            return {"success": False, "error": str(e)}
+
+    @mcp.tool()
+    def web_screenshot(url: str, outdir: str = "/Users/zhj/hexstrike-ai/screenshots",
+                       additional_args: str = "") -> Dict[str, Any]:
+        """
+        Capture a full-page screenshot of a web target via headless Chrome.
+
+        Args:
+            url: Target URL
+            outdir: Directory to save PNGs (default ~/hexstrike-ai/screenshots)
+            additional_args: Extra Chrome args (rarely needed)
+
+        Returns:
+            Path to the saved PNG
+        """
+        data = {"url": url, "outdir": outdir, "additional_args": additional_args}
+        logger.info(f"📸 Screenshot: {url}")
+        try:
+            return hexstrike_client.execute_tool_async("web_screenshot", "api/tools/web_screenshot", data) or {"success": False, "error": "empty"}
+        except RuntimeError as e:
+            return {"success": False, "error": str(e)}
+
+    @mcp.tool()
+    def revshell_generate(ip: str, port: int = 4444, shell: str = "bash",
+                          technique: str = "bash") -> Dict[str, Any]:
+        """
+        Generate a one-liner reverse shell payload in the chosen tech.
+
+        Args:
+            ip: Attacker listener IP
+            port: Attacker listener port
+            shell: bash | nc | python | perl | ruby | php | openssl | powershell | mshta
+            technique: Alias for shell selection (defaults to shell)
+
+        Returns:
+            Copy-paste payload + listener hint for a compromised host
+        """
+        import revshell
+        return revshell.revshell_generate(ip=ip, port=port, shell=shell, technique=technique)
+
+    @mcp.tool()
+    def listener_start(port: int = 4444, listener_type: str = "nc",
+                       msf_payload: str = "") -> Dict[str, Any]:
+        """
+        Start a local reverse-shell listener (nc, or a msf handler in the Linux sidecar).
+
+        Args:
+            port: Listen port
+            listener_type: nc | msf
+            msf_payload: Payload for the msf handler (default linux/x64/meterpreter_reverse_tcp)
+
+        Returns:
+            Listener status + log path; poll with listener_poll once a target connects
+        """
+        import listener
+        return listener.listener_start(port=port, listener_type=listener_type, msf_payload=msf_payload)
+
+    @mcp.tool()
+    def listener_poll(port: int = 4444) -> Dict[str, Any]:
+        """
+        Show whether a reverse shell connected and tail the listener log.
+
+        Args:
+            port: The listener port
+        """
+        import listener
+        return listener.listener_poll(port=port)
+
+    @mcp.tool()
+    def listener_stop(port: int = 4444) -> Dict[str, Any]:
+        """
+        Stop the reverse-shell listener.
+
+        Args:
+            port: The listener port
+        """
+        import listener
+        return listener.listener_stop(port=port)
+
+    @mcp.tool()
+    def attack_chain(url: str, searchsploit_limit: int = 4) -> Dict[str, Any]:
+        """
+        Correlate a target's fingerprints into an actionable exploit checklist.
+
+        Args:
+            url: Target URL
+            searchsploit_limit: Max exploit-DB hits per component
+
+        Returns:
+            components + versions with matched nuclei tags, msf modules and searchsploit exploit ids
+        """
+        import attackchain
+        return attackchain.attack_chain(url=url, searchsploit_limit=searchsploit_limit)
+
+    @mcp.tool()
+    def web_login_spray(url: str, login_path: str = "/login", users: str = "",
+                        passwords: str = "", fail_indicator: str = "", method: str = "POST",
+                        body_format: str = "form", pause_ms: int = 350,
+                        max_attempts: int = 200, timeout: int = 25) -> Dict[str, Any]:
+        """
+        Targeted weak-credential spray against a web login (rate-limited, stop-on-block).
+
+        Args:
+            url: Site base URL
+            login_path: Login endpoint path (default /login)
+            users: Comma-separated usernames (defaults to common admin names)
+            passwords: Comma-separated passwords (defaults to a common top list)
+            fail_indicator: Substring that appears on failed login
+            method: POST (default)
+            body_format: form | json
+            pause_ms: Delay between attempts (default 350)
+            max_attempts: Hard cap on attempts (default 200)
+            timeout: Per-request timeout
+
+        Returns:
+            confirmed creds + result sample + blocked status (429/403/401)
+        """
+        import sprays
+        return sprays.web_login_spray(url=url, login_path=login_path, users=users, passwords=passwords,
+                                      fail_indicator=fail_indicator, method=method, body_format=body_format,
+                                      pause_ms=pause_ms, max_attempts=max_attempts, timeout=timeout)
+
+    @mcp.tool()
+    def redis_unauth(target: str, port: str = "6379", command: str = "info server") -> Dict[str, Any]:
+        """
+        Check a Redis for unauthenticated access (linux sidecar).
+
+        Args:
+            target: Redis host
+            port: Redis port (default 6379)
+            command: redis-cli command to run if reachable (default 'info server')
+
+        Returns:
+            Redis banner/response -> unauthorized if it answers without creds
+        """
+        data = {"target": target, "port": port, "command": command}
+        try:
+            return hexstrike_client.execute_tool_async("redis", "api/tools/redis", data) or {"success": False, "error": "empty"}
+        except RuntimeError as e:
+            return {"success": False, "error": str(e)}
+
+    @mcp.tool()
+    def ldap_search(target: str, port: int = 389, base_dn: str = "", filter: str = "(objectClass=*)",
+                    attrs: str = "") -> Dict[str, Any]:
+        """
+        LDAP search (anonymous bind check or with creds) via the linux sidecar.
+
+        Args:
+            target: LDAP host
+            port: LDAP port (default 389)
+            base_dn: Base DN to search (empty tests anonymous bind)
+            filter: LDAP search filter (default (objectClass=*))
+            attrs: Comma-separated attributes to return
+
+        Returns:
+            LDAP entries -> anonymous dump = unauth bind
+        """
+        data = {"hostport": f"{target}:{port}", "base_dn": base_dn, "filter": filter, "attrs": attrs}
+        try:
+            return hexstrike_client.execute_tool_async("ldap", "api/tools/ldap", data) or {"success": False, "error": "empty"}
+        except RuntimeError as e:
+            return {"success": False, "error": str(e)}
+
+    @mcp.tool()
+    def mongo_unauth(target: str, port: int = 27017, eval: str = "db.adminCommand({listDatabases:1})") -> Dict[str, Any]:
+        """
+        Check a MongoDB for unauthenticated access (linux sidecar).
+
+        Args:
+            target: MongoDB host
+            port: MongoDB port (default 27017)
+            eval: mongosh --eval script (default list databases)
+
+        Returns:
+            DB listing -> unauthorized if reachable without creds
+        """
+        data = {"uri": f"mongodb://{target}:{port}", "eval": eval}
+        try:
+            return hexstrike_client.execute_tool_async("mongosh", "api/tools/mongosh", data) or {"success": False, "error": "empty"}
+        except RuntimeError as e:
+            return {"success": False, "error": str(e)}
+
+    @mcp.tool()
+    def idor_check(base_url: str, start: int = 1, end: int = 10, ids: str = "",
+                   method: str = "GET", cookie_a: str = "", cookie_b: str = "",
+                   bearer_a: str = "", bearer_b: str = "", timeout: int = 20) -> Dict[str, Any]:
+        """
+        Horizontal authorization (IDOR) differencing across object ids on {id} URL.
+
+        Args:
+            base_url: URL template containing {id}, e.g. https://s/api/user/{id}/details
+            start/end: id range (ignored if ids given)
+            ids: Comma-separated explicit object ids
+            method: HTTP method (GET default)
+            cookie_a/bearer_a: Privileged session cookie / bearer token
+            cookie_b/bearer_b: Low-privilege session cookie / bearer (empty = anonymous)
+
+        Returns:
+            Per-id status/length comparison + findings where low-priv/anon access matches privileged
+        """
+        import idor
+        return idor.idor_check(base_url=base_url, start=start, end=end, ids=ids, method=method,
+                               cookie_a=cookie_a, cookie_b=cookie_b,
+                               bearer_a=bearer_a, bearer_b=bearer_b, timeout=timeout)
 
     @mcp.tool()
     def create_scan_summary(target: str, tools_used: str, vulnerabilities_found: int = 0,

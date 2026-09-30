@@ -1,7 +1,10 @@
 {
-  "binary": "responder",
+  "binary": "docker",
+  "backend": "docker",
+  "container": "hexstrike-linux",
+  "container_binary": "responder",
   "category": "network",
-  "description": "LLMNR, NBT-NS and MDNS poisoner",
+  "description": "LLMNR, NBT-NS and MDNS poisoner (Linux sidecar)",
   "timeout": 300,
   "command": [
     "responder",
@@ -11,8 +14,25 @@
       "default": "eth0"
     },
     {
+      "param": "analyze",
+      "flag": "-A"
+    },
+    {
+      "param": "wpad",
+      "flag": "-w",
+      "default": true
+    },
+    {
+      "param": "force_wpad_auth",
+      "flag": "-F"
+    },
+    {
+      "param": "fingerprint",
+      "flag": "-f"
+    },
+    {
       "param": "additional_args",
-      "default": "-wrf"
+      "default": "-vP"
     }
   ],
   "name": "responder"

@@ -1,0 +1,33 @@
+{
+  "binary": "docker",
+  "backend": "docker",
+  "container": "hexstrike-linux",
+  "container_binary": "ldapsearch",
+  "category": "exploitation",
+  "description": "LDAP search / anonymous bind check (ldapsearch in Linux sidecar)",
+  "timeout": 60,
+  "command": [
+    "ldapsearch",
+    "-x",
+    "-H",
+    {
+      "param": "hostport",
+      "quote": true
+    },
+    {
+      "param": "base_dn",
+      "flag": "-b",
+      "quote": true
+    },
+    {
+      "param": "filter",
+      "default": "(objectClass=*)",
+      "quote": true
+    },
+    {
+      "param": "attrs",
+      "quote": true
+    }
+  ],
+  "name": "ldap"
+}

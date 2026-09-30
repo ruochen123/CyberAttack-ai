@@ -1,0 +1,19 @@
+{
+  "binary": "docker",
+  "backend": "docker",
+  "container": "hexstrike-linux",
+  "container_binary": "msfconsole",
+  "category": "exploitation",
+  "description": "Metasploit Framework console in Linux sidecar (resource script auto-run)",
+  "timeout": 600,
+  "command": [
+    "msfconsole",
+    "-q",
+    "-x",
+    {
+      "param": "resource",
+      "quote": true
+    }
+  ],
+  "name": "msfconsole"
+}

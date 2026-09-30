@@ -1,0 +1,24 @@
+{
+  "binary": "whatweb",
+  "category": "web",
+  "description": "Web technology and CMS fingerprinting (WhatWeb)",
+  "timeout": 180,
+  "command": [
+    "whatweb",
+    "--color=never",
+    "--aggression",
+    {
+      "param": "aggression",
+      "default": "3"
+    },
+    {
+      "param": "url",
+      "alt_param": "target",
+      "quote": true
+    },
+    {
+      "param": "additional_args"
+    }
+  ],
+  "name": "whatweb"
+}

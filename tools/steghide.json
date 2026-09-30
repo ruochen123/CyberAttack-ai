@@ -1,7 +1,10 @@
 {
-  "binary": "steghide",
+  "binary": "docker",
+  "backend": "docker",
+  "container": "hexstrike-linux",
+  "container_binary": "steghide",
   "category": "forensics",
-  "description": "Steganography tool for hiding/extracting data",
+  "description": "Steganography tool for hiding/extracting data (Linux sidecar)",
   "timeout": 60,
   "command": [
     "steghide",
@@ -11,12 +14,17 @@
     },
     "-sf",
     {
-      "param": "file"
+      "param": "cover_file",
+      "alt_param": "file",
+      "quote": true
     },
-    "-p",
+    {
+      "param": "output_file",
+      "template": "-xf '{value}'"
+    },
     {
       "param": "passphrase",
-      "quote": true
+      "template": "-p '{value}'"
     },
     {
       "param": "additional_args"

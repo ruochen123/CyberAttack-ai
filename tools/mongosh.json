@@ -1,0 +1,24 @@
+{
+  "binary": "docker",
+  "backend": "docker",
+  "container": "hexstrike-linux",
+  "container_binary": "mongo",
+  "category": "exploitation",
+  "description": "MongoDB shell (unauthorized access check, legacy mongo) in Linux sidecar",
+  "timeout": 60,
+  "command": [
+    "mongo",
+    {
+      "param": "uri",
+      "quote": true
+    },
+    "--quiet",
+    "--eval",
+    {
+      "param": "eval",
+      "default": "db.adminCommand({listDatabases:1})",
+      "quote": true
+    }
+  ],
+  "name": "mongosh"
+}

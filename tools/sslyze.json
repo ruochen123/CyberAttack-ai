@@ -1,0 +1,17 @@
+{
+  "binary": "sslyze",
+  "category": "network",
+  "description": "Deep TLS/SSL configuration and protocol analysis",
+  "timeout": 300,
+  "command": [
+    "sslyze",
+    {
+      "param": "hostport",
+      "quote": true
+    },
+    {
+      "param": "additional_args"
+    }
+  ],
+  "name": "sslyze"
+}

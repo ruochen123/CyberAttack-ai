@@ -1,0 +1,16 @@
+{
+  "binary": "docker",
+  "category": "exploitation",
+  "description": "Extract privesc scripts (linpeas/les/pspy) from Linux sidecar /opt/privesc to local dir",
+  "timeout": 60,
+  "command": [
+    "docker",
+    "cp",
+    "hexstrike-linux:/opt/privesc/.",
+    {
+      "param": "dest",
+      "default": "/Users/zhj/hexstrike-ai/privesc/"
+    }
+  ],
+  "name": "privesc_extract"
+}

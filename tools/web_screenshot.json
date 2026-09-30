@@ -1,0 +1,22 @@
+{
+  "binary": "web_screenshot",
+  "category": "web",
+  "description": "Capture full-page screenshot via headless Chrome (PNG into outdir)",
+  "timeout": 120,
+  "command": [
+    "web_screenshot",
+    {
+      "param": "url",
+      "quote": true
+    },
+    {
+      "param": "outdir",
+      "default": "/Users/zhj/hexstrike-ai/screenshots",
+      "quote": true
+    },
+    {
+      "param": "additional_args"
+    }
+  ],
+  "name": "web_screenshot"
+}

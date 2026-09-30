@@ -23,3 +23,14 @@ ai-security-snapshot.json
 ai-security-snapshot.json.bak*
 ai-security-snapshot.json.lock
 mcp-servers-state.json
+
+# privesc scripts (docker cp artifacts)
+privesc/
+
+# P0/P1 部署产物(不入库)
+nuclei-templates/
+screenshots/
+bin/
+
+# secretfinder 默认输出
+output/
