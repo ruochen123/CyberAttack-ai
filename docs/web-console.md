@@ -1,64 +1,71 @@
-# HexStrike Web 控制台（改造④）— 使用说明
+# HexStrike Web 控制台 — 使用说明
 
-> 状态：**已实施（2026-09-15，NL + Agent 驱动 2026-09-16）** ｜ 前端视觉：frontend-design「界面即命令」
-> 依赖：Python 3.10+（标准库）＋ `claude` CLI 在 PATH（Agent 模式用）＋ 可选 `DEEPSEEK_API_KEY`（NL 更强解析）
-> 只对 **127.0.0.1** 监听（本机使用）；扫描/验证会对目标真实发请求。
+> 只监听 **127.0.0.1**（本机）。扫描 / 验证 / 手动工具都会对目标**真实发请求**。
+> 心智模型一行：**每发起一次＝一个任务，全部以任务形式并行跑，各自一张卡**。
 
 ## 启动
 
-**一键（推荐，任意终端）：**
-
 ```bash
-hexdash             # 启动 :8765，自动开浏览器；已在运行则复用
+hexdash             # 起 :8765 独立进程，已在运行则复用；日志 /tmp/hexdash.log
 hexdash stop        # 停止
 ```
 
-`hexdash` 定义在 `~/.zshrc`，实际是 `nohup dashboard.py` 起**独立进程**（PPID=1、日志 /tmp/hexdash.log），不受 Claude 会话/MCP 影响。等价直接跑：
+等价：`cd ~/hexstrike-ai && ./hexstrike-env/bin/python3 dashboard.py`。也可在 Claude 会话内经 MCP 工具 `start_dashboard` / `stop_dashboard` 启停（同一形态）。打开 http://127.0.0.1:8765/。
 
-```bash
-cd ~/hexstrike-ai && ./hexstrike-env/bin/python3 dashboard.py
-```
+## 面板（左右两栏）
 
-也可以经 MCP 工具启停（Claude 会话内）：`start_dashboard(port=8765)` / `stop_dashboard(port=8765)`。2026-09-17 起 MCP 工具与 `hexdash` 同为**独立进程形态**（走 `spawn_dashboard`/`stop_dashboard_process`，端口幂等复用、按端口停止），已无"会话内线程、随会话退出"的旧行为，MCP 断开不影响控制台。
+- **左 `col-tools`**：使用说明 · 起手·自主任务（主线）· 手动工具（默认收起，`mTgl` 展开）
+- **右 `col-results`**：任务卡池 · 系统事件 · 资产快照（sticky，独立滚动）
 
-打开 `http://127.0.0.1:8765/` 即控制台。
+窄屏（<900px）自动回落单栏。
 
-## 三种操作模式
+## 主线：自主任务（起手）
 
-形成「人工表单 → 自然语言 → 全自主」三级：
+- 输入框＝整段 `claude -p` 命令行：`/技能名`→SKILL.md 注入；`--model`/`--max-turns`/`--allowedTools` 原样透传；其余为 prompt。
+- 输入 `/` 弹分组菜单（`/api/menu`）：`/skills` `/mcp`（服务器）`/tools`（192 个 hexstrike 工具）`/plugin` `/cmd`。
+- 选项：模型下拉（--model）；**工具白名单**（花名册注入 --allowedTools）；**🗂 隔离上下文**（默认开）；**续上一会话**（复用最近一次 agent 会话，可无限续）。
+- **多轮交互**：运行中卡上 ⏸ 中断（会话保留）→ 在**这张卡**的输入框写调整 → ▶ 继续（`--resume` 同一会话带记忆续跑），可反复中断/续跑。
+- **隔离上下文（默认开）**：agent 工作目录用 `.agent/<会话id>`，项目级 auto-memory 按任务隔离，**并行任务互不污染记忆**；user 级 auto-memory 始终共享；续跑复用同一目录读回原记忆。取消勾选＝共享项目级记忆（同一攻防场景协作时用）。
 
-1. **表单**：左侧面板填目标/扫描类型/severity/tags/template → 执行。后台 job 轮询进度，完成后自动写资产快照。
-2. **自然语言指令框**（`POST /api/nlp`）：如「扫描 https://example.com:8443 的高危 xss」「给 app-server 加 redteam 标签」「资产统计」。逻辑在 `nlp.py`：优先 DeepSeek chat 解析（配 `DEEPSEEK_API_KEY`），无 key/失败回退本地关键词规则。
-3. **Agent 自主任务框**（`POST /api/jobs` `type=agent`）：给一句目标，控制台起 **headless `claude -p`**（`--permission-mode bypassPermissions`）子进程，复用现有 Claude agent 框架做多轮规划——自己调 hexstrike 工具（探活/枚举/验证/写快照）、结束中文总结；工具调用与结论实时流进活动日志。**输入框就是 claude 命令行**：
-   - 整段 = `claude -p` 参数：`/技能名`、前置 flag（`--model`/`--max-turns`/`--allowedTools` 等原样透传）、首个非 flag 词起为 prompt，纯文本用法与旧版一致；
-   - **输入 `/` 即弹 TUI 式分组菜单**（`/api/menu`）：`/` 默认列 命令 + 技能·插件（带 frontmatter 描述）；类别词整组展开——`/skills`（技能清单）、`/mcp`（2 台 MCP **服务器**，非单个工具）、`/tools`（158 个 `mcp__hexstrike-ai__*` 工具）、`/plugin`（插件技能）、`/cmd`（命令）；其它前缀跨组过滤；↑↓ + Enter 选择、Esc 关闭；
-   - `/neat-freak 整理文档` → 控制台定位 `SKILL.md` 确定性注入 `--append-system-prompt-file`（不靠模型自己判断）；内置/插件技能无本地文件时优雅降级，保留原文并引导模型走 Skill 工具；
-   - 保留项硬控：`--output-format` 锁 `stream-json`、`--session-id`/`--resume` 由控制台记账（`--session-id` 手动传可覆盖）、默认 `--permission-mode bypassPermissions`（文本可覆盖）；
-   - 模型下拉 → `--model`（新任务与「继续」均生效）；勾选「工具白名单」+ 逗号分隔列表 → 注入 `--allowedTools`（名单外工具拒绝，拒绝记录进日志）。
-   - **单一活动任务**：任一任务 running/paused 时，新任务（表单/NLP/Agent 三入口统一）返回 409「先完成或停止它」；前端三入口 `setBusy` 同锁禁用、`stop` 可停止（含暂停的 agent）；日志顶部标注「▶ 当前任务 job…」。
-   - **命令面板（`/api/panel/<cmd>`）**：命令组选中 `/mcp` `/skills` `/model` `/config` `/memory` 等即弹 TUI 式对话框——mcp 服务器开关、技能 SKILL.md 预览（内置无文件标灰）、模型选择、配置/记忆/agents/上下文目录清单、`/clear` `/resume` 一键动作。
-   - **MCP 服务器会话级开关**：`/api/mcp` + `/api/mcp/toggle`，状态存 `mcp-servers-state.json`（已 .gitignore，不改全局 `~/.claude.json`）；有停用时控制台发起 agent 生成 `--mcp-config` 只连启用服务器。管的是「console 发起的 agent」，不影响当前 Claude 会话。
-   **多轮交互**：运行中可随时「⏸ 中断」（`/api/jobs/<id>/interrupt`，status 转 paused、会话保留）→ 在输入框写调整指令（留空=直接继续）→「▶ 继续」（`/api/jobs/<id>/resume`，`claude -p --resume <session_id>` 同一会话带记忆续跑）。会话以 `--session-id <uuid>` 创建，中断后可按需反复 调整→继续。**续上一会话**：重复提交目标默认重开新会话（每次新建 session-id，仅读快照兜底）；勾选「🔗 续上一会话」→ `POST /api/jobs` 带 `resume_session:"last"`，复用最近一次 agent 会话 id（含已完成的会话，`claude -p --resume` 继续），同一攻防对话可无限续。
+## 并行池与任务卡池
 
-## 页面与接口
+- 并行上限 **3**（env `HEXSTRIKE_CONCURRENCY` 可改）；满池时新任务返回 409「并行池已满」。
+- **每种任务一张卡**：卡头＝类型/状态/耗时；卡内＝该任务自己的日志；卡尾「✔ 结论」＝执行摘要；⏸/▶/✖ 只作用于该卡。
+- `GET /api/jobs` 列全部任务；任务类型 kind：`scan`/`verify`/`agent`/`chain`/`util`，显示名走 `KIND` 映射。
 
-- `GET /` — 控制台单页（统计条 / 风险 / 资产表 / finding·verdict 详情，点击资产行展开复现命令与证据哈希；搜索 + 风险筛选）
-- `GET /api/stats` `GET /api/assets` — 资产快照（每次请求重读 `ai-security-snapshot.json`，与 agent 等其它进程共享最新数据）
-- `GET /api/report?full=1[&download=1]` — markdown 报告 / 下载
-- `GET /api/menu` — `/` 菜单（命令/技能·插件/MCP 工具/其它服务器）
-- `GET /api/panel/<cmd>` — 命令面板（mcp|skills|model|permissions|config|memory|agents|add-dir|clear|compact|resume|rewind）
-- `GET /api/mcp` `POST /api/mcp/toggle` — MCP 服务器状态 / 会话级开关（`mcp-servers-state.json`）
-- `GET /api/skills` `GET /api/skill/read?name=` — 技能清单（frontmatter 描述/路径）与 SKILL.md 预览
-- `POST /api/jobs` `type=scan | verify | agent`（agent 可带 `resume_session:"last"` 续上一会话、`model`、`fence`）；`GET /api/jobs/<id>` 轮询；`POST /api/jobs/<id>/cancel | interrupt | resume`（interrupt/resume 仅 agent：interrupt → status=paused 保留会话，resume 带 `{text, model, fence}` 调整续跑）
-- `POST /api/nlp` `{text}` — 自然语言 → 动作
-- `POST /api/assets/tags | delete | merge` — 资产管理
+## 手动工具（job kind `chain`/`util`，全部进卡池，按阶段分组）
 
-## 数据与风险演算
+| 阶段 | 工具 | 说明 |
+|---|---|---|
+| 侦察·EXP | 关联 EXP | whatweb 指纹 → 组件/版本 + searchsploit/nuclei tag/msf 模块清单 |
+| 漏洞 | 扫描/验证 | 指定 tags/severity 的 nuclei → 自动独立复验；或对 findings JSON 独立验证 |
+| 漏洞 | 弱口令喷洒 | 定向 POST 弱口令（限速、429/403/401 自动停；成功判定启发式，命中需按站点调 fail_indicator） |
+| 漏洞 | OAST 盲测 | interactsh 拿回显域名→嵌进 SSRF/XXE/XSS payload→轮询回显坐实 |
+| 利用 | 反连+监听 | 一行 payload（bash/nc/python/perl/openssl/powershell…）+ 本地监听（nc 或容器 msf handler） |
+| 利用 | 未授权服务 | redis / ldap / mongo 容器内检查（匿名可达即未授权） |
+| 逻辑 | IDOR 越权 | URL 含 `{id}` 做 高/低权/匿名 三视角差分 |
+| 取证 | JS 密钥 | 扫前端 JS 硬编码密钥/API key |
+| 取证 | 截图 | headless Chrome 全页 PNG（落 ~/hexstrike-ai/screenshots） |
 
-快照默认 `ai-security-snapshot.json`（`.gitignore` 已排除）。risk 由三态验证驱动：`confirmed` 抬级别、`refuted` 留历史不计、`unverifiable` 计待复核。每个动作的活动日志保留可复现命令 ―— 「界面即命令」。
+手动工具是「精确档位」：普通流程交给自主任务；想精确做某一步 / 单点坐实 / 取证时再展开使用。
 
-## 已知约束
+## 系统事件 与 资产快照
 
-- Agent 模式依赖 `claude` 能取到 user-scope MCP 配置（hexstrike 自动拉起），模型链路与当前会话一致（本机代理）。
-- 无人值守（launchd 定时自跑）需要代理常驻；要离线自治可把 `nlp.py`/agent 的模型层切 DeepSeek 直连（当前 NL 已支持）。
-- 设计背景对照：为什么不整体换平台（PentAGI / CyberStrikeAI）见 CLAUDE.md 里改造清单的说明。
+- **系统事件** = 平台消息（提交 / 完成汇总 / 错误），明确**不含**任务日志（各任务日志在它们自己的卡片里）。
+- **资产快照**（`ai-security-snapshot.json`，已 .gitignore）：任务的发现自动写入；risk 由三态验证驱动（confirmed 抬级 / refuted 留史不计 / unverifiable 待复核）。支持搜索、打标签、删除/合并；全部完成后「导出报告」生成 markdown 汇总。
+
+## 接口速查
+
+- `GET /` — 控制台单页
+- `POST /api/jobs` `{type: scan | verify | agent | chain | util(action=…)}`；agent 可带 `resume_session:"last"`、`model`、`fence`、`isolate`
+  - `chain`：EXP 自动关联（`url`）
+  - `util` action：`revshell` / `spray` / `secret` / `screenshot` / `idor` / `oast_start|oast_poll|oast_stop` / `redis` / `ldap` / `mongo`
+- `GET /api/jobs`；`GET /api/jobs/<id>`；`POST /api/jobs/<id>/cancel | interrupt | resume`（interrupt/resume 仅 agent）
+- `POST /api/nlp`（自然语言→动作）；`GET /api/menu`；`GET /api/panel/<cmd>`；`GET /api/mcp` + `POST /api/mcp/toggle`
+- `GET /api/stats` `GET /api/assets`；`POST /api/assets/tags|delete|merge`；`GET /api/report?full=1[&download=1]`
+
+## 配置与约束
+
+- `HEXSTRIKE_CONCURRENCY`（默认 3）＝并行任务上限；`DEEPSEEK_API_KEY` 提升 NL 解析质量。
+- Agent 模式依赖 `claude` CLI 在 PATH 且能取到 user-scope hexstrike MCP 配置；MCP 会话级开关只管 console 发起的 agent，不影响当前 Claude 会话。
+- 无人值守（launchd 定时自跑）需要代理常驻。
