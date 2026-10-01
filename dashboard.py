@@ -65,9 +65,11 @@ header{display:flex;align-items:baseline;gap:16px;border-bottom:1px solid var(--
 .dot.on{background:var(--good);box-shadow:0 0 8px var(--good)}
 .sub{color:var(--ink2);font-size:12px;font-family:var(--mono)}
 /* layout */
-main{display:grid;grid-template-columns:minmax(360px,390px) minmax(300px,1fr) 320px;gap:16px;margin-top:16px}
-@media(max-width:1120px){main{grid-template-columns:1fr 1fr}}
-@media(max-width:760px){main{grid-template-columns:1fr}}
+main{display:grid;grid-template-columns:minmax(360px,430px) minmax(0,1fr);gap:18px;margin-top:16px;align-items:start}
+.col-tools,.col-results{display:flex;flex-direction:column;gap:18px;min-width:0}
+.col-results{position:sticky;top:0;max-height:100vh;overflow:auto;padding-bottom:8px}
+@media(max-width:900px){main{grid-template-columns:1fr}.col-results{position:static;max-height:none;overflow:visible}}
+@media(max-width:620px){.wrap{padding:12px}}
 .panel{background:var(--surface);border:1px solid var(--line);border-radius:7px;overflow:hidden}
 .panel h3{margin:0;padding:10px 14px;font-family:var(--mono);font-size:12px;font-weight:600;
   letter-spacing:.4px;border-bottom:1px solid var(--line);color:var(--ink2)}
@@ -179,6 +181,7 @@ textarea{resize:vertical;min-height:64px}
 </header>
 
 <main>
+  <section class="col-tools">
   <div class="panel"><h3>使用说明 · 界面怎么读</h3><div class="pbody" style="font-size:12.5px;line-height:1.75">
     <div><b>主线（推荐）</b>：在「起手」填一个目标，勾「自主任务」发起 —— Claude 自动跑「指纹→EXP→扫描/盲测→坐实→写快照→中文总结」，你只需看进度与结果。</div>
     <div style="margin-top:6px"><b>手动工具什么时候用</b>：想精确做某一步（指定 tags 扫描、坐实一个盲测、测未授权、查越权）而不是整条链时。点任一工具＝发起一个独立任务，和自主任务一样出现在任务卡池。</div>
@@ -226,8 +229,10 @@ textarea{resize:vertical;min-height:64px}
     <div class="hint">勾选工具白名单 → 注入 --allowedTools（名单外工具拒绝，拒绝记录进日志）</div>
   </div></div>
 
-  <div class="panel"><h3>手动工具 · 精确档位（每步一个任务卡）</h3><div class="pbody">
-    <div style="font-size:12px;color:var(--ink2);line-height:1.5">在这里精确地做某一步；普通流程交给上面的「自主任务」。</div>
+  <div class="panel"><h3>手动工具 · 精确档位</h3><div class="pbody">
+    <button class="btn ghost small" id="mTgl" style="margin-bottom:8px">▾ 展开手动工具（精确档位）</button>
+    <div id="mtoolsWrap" hidden>
+    <div style="font-size:12px;color:var(--ink2);line-height:1.5">想精确做某一步时再展开；普通流程交给上面的「自主任务」。</div>
 
     <div style="margin-top:12px;font-weight:600;color:var(--ink)">▸ 侦察 · 指纹 &amp; EXP</div>
     <div class="hint">识别组件/版本并自动关联可打 EXP（searchsploit · nuclei tag · msf 模块）</div>
@@ -315,8 +320,11 @@ textarea{resize:vertical;min-height:64px}
       <input id="ssUrl" placeholder="https://host" style="flex:1">
       <button class="btn ghost" id="goScreenshot" style="flex:none">📸 截图</button>
     </div>
+    </div>
   </div></div>
+  </section>
 
+  <section class="col-results">
   <div class="panel"><h3>任务卡池 ·（并行，每个任务一张卡）</h3><div class="pbody">
     <div class="hint" style="margin-bottom:4px">每张卡＝一次任务的执行明细：卡头＝类型/状态/耗时，卡内＝该任务自己的日志，卡尾「✔ 结论」＝执行结果。并行任务各一张卡、各自独立；⏸中断/▶继续/✖取消只作用于该卡（agent 中断后可在这张卡的输入框里调整再继续）。运行中 <span id="jobCount">0/3</span>，满 3 时新任务将被拒。</div>
     <div id="cards"></div>
@@ -350,6 +358,7 @@ textarea{resize:vertical;min-height:64px}
     <tbody id="rows"><tr class="empty" id="empty" hidden><td colspan="7">快照为空 — 先发起一次操作</td></tr></tbody></table>
     </div>
   </div></div>
+  </section>
 </main>
 </div>
 <div class="toast" id="toast"></div>
@@ -559,6 +568,8 @@ $("goSecret").addEventListener("click",()=>{const u=$("sfUrl").value.trim();if(!
   submitJob({type:"util",action:"secret",url:u},"🔍 JS密钥");});
 $("goScreenshot").addEventListener("click",()=>{const u=$("ssUrl").value.trim();if(!u)return toast("填目标 URL");
   submitJob({type:"util",action:"screenshot",url:u},"📸 截图");});
+$("mTgl").addEventListener("click",()=>{const w=$("mtoolsWrap"),o=w.hidden;w.hidden=!o;
+  $("mTgl").textContent=o?"▴ 收起手动工具":"▾ 展开手动工具（精确档位）";});
 let MENU=[],skillCtx=null;
 async function loadMenu(){try{const r=await api("/api/menu");MENU=r.items||[];}catch(e){}}
 function tokSplit(v){const sp=v.lastIndexOf(" ");return [v.slice(0,sp+1),v.slice(sp+1)];}
