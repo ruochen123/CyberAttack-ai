@@ -179,9 +179,11 @@ textarea{resize:vertical;min-height:64px}
 </header>
 
 <main>
-  <div class="panel"><h3>使用流程（推荐路径）</h3><div class="pbody" style="font-size:12.5px;line-height:1.7">
-    <div>① <b>输入目标</b>（右下 URL 框或直接写进自主任务）→ ② <b>勾「自主任务」一次跑完主线</b>（指纹→EXP→扫描/盲测→坐实→写快照→中文总结）→ ③ 结果看 <b>活动日志卡片</b> 与 <b>资产快照</b>。</div>
-    <div class="hint" style="margin-top:6px">多数目标一条自主任务就够。下方「手动工具」＝精确档位：agent 跑偏、要指定 tags、单点坐实（OAST/未授权/IDOR）、侧路取证（截屏/JS密钥）时才用。</div>
+  <div class="panel"><h3>使用说明 · 界面怎么读</h3><div class="pbody" style="font-size:12.5px;line-height:1.75">
+    <div><b>主线（推荐）</b>：在「起手」填一个目标，勾「自主任务」发起 —— Claude 自动跑「指纹→EXP→扫描/盲测→坐实→写快照→中文总结」，你只需看进度与结果。</div>
+    <div style="margin-top:6px"><b>手动工具什么时候用</b>：想精确做某一步（指定 tags 扫描、坐实一个盲测、测未授权、查越权）而不是整条链时。点任一工具＝发起一个独立任务，和自主任务一样出现在任务卡池。</div>
+    <div style="margin-top:6px"><b>进度区怎么读</b>：<b>任务卡池</b>每张卡＝一个任务 —— 卡头=类型/状态/耗时，卡内=该任务自己的明细日志，卡尾「✔ 结论」=这步的结果；并行任务各一张卡、各自独立（⏸/▶/✖只作用于该卡，agent 中断后可在这张卡里输入调整再继续）。<b>系统事件</b>是平台级消息（提交/错误/全局提示），不含任务日志。</div>
+    <div style="margin-top:6px"><b>结果在哪里</b>：每个任务的发现自动写入「资产快照」；全部完成后点「导出报告」生成 markdown 汇总。</div>
   </div></div>
 
   <div class="panel"><h3>起手 · 自主任务（推荐主线）</h3><div class="pbody">
@@ -222,13 +224,26 @@ textarea{resize:vertical;min-height:64px}
     </div>
     <input id="atools" placeholder="逗号分隔，如 Bash,Read,Write,mcp__hexstrike-ai__query_assets" disabled style="margin-top:6px">
     <div class="hint">勾选工具白名单 → 注入 --allowedTools（名单外工具拒绝，拒绝记录进日志）</div>
-    <hr style="border:none;border-top:1px solid var(--line);margin:14px 0 2px">
-    <label for="tgt">扫描目标（URL / 域名 / IP）</label>
+  </div></div>
+
+  <div class="panel"><h3>手动工具 · 精确档位（每步一个任务卡）</h3><div class="pbody">
+    <div style="font-size:12px;color:var(--ink2);line-height:1.5">在这里精确地做某一步；普通流程交给上面的「自主任务」。</div>
+
+    <div style="margin-top:12px;font-weight:600;color:var(--ink)">▸ 侦察 · 指纹 &amp; EXP</div>
+    <div class="hint">识别组件/版本并自动关联可打 EXP（searchsploit · nuclei tag · msf 模块）</div>
+    <div style="display:flex;gap:8px">
+      <input id="chainUrl" placeholder="https://host">
+      <button class="btn ghost" id="goChain" style="flex:none">🔗 关联 EXP</button>
+    </div>
+
+    <div style="margin-top:14px;font-weight:600;color:var(--ink)">▸ 漏洞 · 扫描 / 喷洒 / OAST 盲测</div>
+    <div class="hint">指定 tags/severity 精确扫描；集中喷洒弱口令；OAST 拿回显域名坐实 blind 洞（扫描的自动复验仍会独立跑）</div>
+    <label for="tgt" style="margin-top:8px">扫描 / 验证</label>
     <div style="display:flex;gap:8px">
       <input id="tgt" placeholder="https://host / host:port" value="">
-      <button class="btn ghost" id="useTgt" style="flex:none" title="把目标填进上方自主任务框，一键跑主线">→ 交自主任务</button>
+      <button class="btn ghost" id="useTgt" style="flex:none" title="把目标填进上面「起手」的自主任务框，一键跑主线">→ 交自主任务</button>
     </div>
-    <div class="opts">
+    <div class="opts" style="margin-top:6px">
       <label for="ftype">扫描类型</label>
       <select id="ftype">
         <option value="scan">扫描并验证（nuclei → 自动复验）</option>
@@ -250,26 +265,9 @@ textarea{resize:vertical;min-height:64px}
       <label for="fjs">findings（JSON 数组 / JSONL）</label>
       <textarea id="fjs" placeholder='[{"target":"https://host","type":"xss","matched_at":"https://host/a?id=1","severity":"high"}]'></textarea>
     </div>
-    <div class="btnrow">
-      <button class="btn primary" id="go">▶ 执行</button>
-    </div>
-    <div class="hint">action 会真实发请求；每一步都留可复现命令</div>
-  </div></div>
-
-  <div class="panel"><h3>手动工具 · 精确档位（每步一个任务卡）</h3><div class="pbody">
-    <div style="font-size:12px;color:var(--ink2);line-height:1.5">在这里精确地做某一步；普通流程交给上面的「自主任务」。</div>
-
-    <div style="margin-top:12px;font-weight:600;color:var(--ink)">▸ 侦察 · 指纹 &amp; EXP</div>
-    <div class="hint">识别组件/版本并自动关联可打 EXP（searchsploit · nuclei tag · msf 模块）</div>
-    <div style="display:flex;gap:8px">
-      <input id="chainUrl" placeholder="https://host">
-      <button class="btn ghost" id="goChain" style="flex:none">🔗 关联 EXP</button>
-    </div>
-
-    <div style="margin-top:14px;font-weight:600;color:var(--ink)">▸ 漏洞 · 喷洒 / 盲测</div>
-    <div class="hint">带参扫描在上方「起手」面板；这里补 弱口令喷洒 与 OAST 盲测坐实</div>
-    <div style="display:flex;gap:8px;align-items:center">
-      <input id="spUrl" placeholder="https://host" style="flex:1">
+    <div class="btnrow" style="margin-top:6px"><button class="btn primary" id="go">▶ 执行</button></div>
+    <div style="display:flex;gap:8px;align-items:center;margin-top:10px">
+      <input id="spUrl" placeholder="https://host（登录页）" style="flex:1">
       <input id="spLogin" placeholder="/login" style="flex:none;width:90px">
       <button class="btn ghost" id="goSpray" style="flex:none">🧪 弱口令喷洒</button>
     </div>
@@ -319,19 +317,22 @@ textarea{resize:vertical;min-height:64px}
     </div>
   </div></div>
 
-  <div class="panel"><h3>活动日志</h3><div class="pbody">
-    <div id="jobbelt" style="display:flex;flex-wrap:wrap;gap:6px;margin:6px 0 2px;align-items:center">
-      <span class="hint">并行池（<span id="jobCount">0/3</span>）· 每任务一卡，独立日志与 暂停/继续/取消</span>
-    </div>
+  <div class="panel"><h3>任务卡池 ·（并行，每个任务一张卡）</h3><div class="pbody">
+    <div class="hint" style="margin-bottom:4px">每张卡＝一次任务的执行明细：卡头＝类型/状态/耗时，卡内＝该任务自己的日志，卡尾「✔ 结论」＝执行结果。并行任务各一张卡、各自独立；⏸中断/▶继续/✖取消只作用于该卡（agent 中断后可在这张卡的输入框里调整再继续）。运行中 <span id="jobCount">0/3</span>，满 3 时新任务将被拒。</div>
     <div id="cards"></div>
-    <div class="log" id="log"><div class="ln"><span class="t"></span>▸ 系统事件 — 任务日志在各任务卡片内</div></div>
+  </div></div>
+
+  <div class="panel"><h3>系统事件 ·（全局消息，不含任务日志）</h3><div class="pbody">
+    <div class="hint" style="margin-bottom:4px">平台级提示（提交/完成汇总/错误）。各任务的明细日志在它们自己的卡片里，不在这里。</div>
+    <div class="log" id="log" style="max-height:220px"><div class="ln"><span class="t"></span>▸ 系统事件区</div></div>
     <div class="footer">
       <button class="btn ghost small" id="exp">导出 markdown 报告</button>
-      <button class="btn ghost small" id="clr">清空日志</button>
+      <button class="btn ghost small" id="clr">清空系统事件</button>
     </div>
   </div></div>
 
-  <div class="panel"><h3>资产快照</h3><div class="pbody">
+  <div class="panel"><h3>资产快照 ·（结果沉淀）</h3><div class="pbody">
+    <div class="hint" style="margin-bottom:8px">各任务的发现自动写入此处（目标/风险/漏洞明细）；全部完成后用「导出报告」生成 markdown 汇总。</div>
     <div class="tiles">
       <div class="tile"><div class="num" id="tTotal">–</div><div class="lbl">资产</div></div>
       <div class="tile"><div class="num" id="tVuln">–</div><div class="lbl">确认漏洞</div></div>
@@ -375,6 +376,7 @@ const JC={running:"#4ade80",paused:"#fbbf24",done:"#38bdf8",error:"#f87171",canc
 const JL={running:"运行",paused:"已暂停",done:"完成",error:"错误",cancelled:"已取消"};
 const KIND={scan:"扫描",verify:"验证",agent:"自主任务",chain:"EXP关联",util:"工具"};
 const EMOJI={scan:"🔍",verify:"✅",agent:"🧠",chain:"🔗",util:"🛠"};
+function fmtDur(s){s=Math.max(0,s||0);return s<60?s+"s":Math.floor(s/60)+"m"+(s%60)+"s";}
 async function refreshJobs(){try{const r=await api("/api/jobs");pool.max=(r.max_running||3);pool.list=r.jobs||[];
   const act=pool.list.filter(j=>j.status==="running"||j.status==="paused");
   $("jobCount").textContent=act.length+"/"+pool.max;
@@ -399,6 +401,7 @@ function refreshCard(j){
   const col=JC[j.status]||"#94a3b8";
   card.querySelector(".jc-head").innerHTML=`<b>${EMOJI[j.kind]||"🛠"} ${esc(KIND[j.kind]||j.kind)}</b>
     <span class="jc-id">${esc(j.job_id)}</span>
+    <span class="jc-id">${fmtDur(j.duration_s)}</span>
     <span class="jchip" style="border:1px solid ${col};color:${col}">${JL[j.status]||j.status}</span>
     ${j.isolated?`<span class="cmd" title="auto-memory 按任务隔离（.agent/<会话id>）">🗂隔离</span>`:""}`;
   card.querySelector(".jc-btns").innerHTML=
@@ -414,9 +417,9 @@ async function pollJob(jid){
     const logEl=card.querySelector(".jc-log"),key=jid+":"+j.log.length;
     if(logEl.dataset.key!==key){logEl.innerHTML=j.log.join("<br>")||'<div class="ln"><span class="t"></span>等待输出…</div>';
       logEl.dataset.key=key;logEl.scrollTop=logEl.scrollHeight;}
-    if(j.status==="done"&&j.result&&j.result.total!=null&&!card.querySelector(".jc-done")){
+    if(j.status==="done"&&!card.querySelector(".jc-done")){
       const d=document.createElement("div");d.className="jc-done";
-      d.textContent=`完成 — ${j.result.total||0} finding · 已复现 ${j.result.confirmed||0} · 未复现 ${j.result.refuted||0} · 待复核 ${j.result.unverifiable||0}`;
+      d.innerHTML=`✔ 结论：${esc(j.concl||"完成")}`;
       logEl.appendChild(d);loadAssets();}
   }catch(e){}}
 async function onCard(e){
@@ -751,6 +754,8 @@ class Job:
         self.session_id = ""      # agent：claude 会话 id（首跑 --session-id，续跑 --resume）
         self.proc = None          # agent：当前 claude 子进程（可中断）
         self.cwd = None           # agent：工作目录（isolate 时 = .agent/<sid>，隔离项目级 auto-memory）
+        self.start = time.time()   # 任务开始时刻，用于展示耗时
+        self.concl = ""            # 结论（任务结束时的摘要，卡头展示）
 
 
 class _Jobs:
@@ -783,16 +788,20 @@ class _Jobs:
         return {"job_id": job.job_id, "kind": job.kind, "status": job.status,
                 "log": job.log, "result": job.result, "error": job.error,
                 "session_id": job.session_id,
+                "duration_s": int(time.time() - job.start),
                 "resumable": bool(job.kind == "agent" and job.session_id),
-                "isolated": bool(getattr(job, "cwd", None) and ".agent" in (getattr(job, "cwd", "") or ""))}
+                "isolated": bool(getattr(job, "cwd", None) and ".agent" in (getattr(job, "cwd", "") or "")),
+                "concl": job.concl}
 
     def render_list(self):
         with self.lock:
             allj = sorted(self.store.values(), key=lambda j: j.job_id)
         return [{"job_id": j.job_id, "kind": j.kind, "status": j.status,
                  "label": j.label,
+                 "duration_s": int(time.time() - j.start),
                  "resumable": bool(j.kind == "agent" and j.session_id),
-                 "isolated": bool(getattr(j, "cwd", None) and ".agent" in (getattr(j, "cwd", "") or ""))}
+                 "isolated": bool(getattr(j, "cwd", None) and ".agent" in (getattr(j, "cwd", "") or "")),
+                 "concl": j.concl}
                 for j in allj]
 
 
@@ -1359,6 +1368,7 @@ def _run_agent_job(job, params):
             return
         job.result = {"rc": job.proc.returncode, "note": "agent 执行完毕"}
         job.status = "done"
+        _set_concl(job)
     except Exception as e:
         job.status = "error"
         job.error = str(e)
@@ -1390,10 +1400,40 @@ def _run_agent_resume(job, text, model="", fence=""):
             return
         job.result = {"rc": job.proc.returncode, "note": "agent 执行完毕"}
         job.status = "done"
+        _set_concl(job)
     except Exception as e:
         job.status = "error"
         job.error = str(e)
         job.log.append(f'<span class="t">{_ts()}</span> <span class="err">✖ {e}</span>')
+
+
+def _set_concl(job):
+    """任务结束时的结论摘要：卡头「结论」区展示，来自 job.result 或日志尾部。"""
+    res = job.result or {}
+    try:
+        if res.get("total") is not None:
+            job.concl = (f"{res['total']} finding · 复现 {res.get('confirmed',0)} · "
+                         f"未复现 {res.get('refuted',0)} · 待复核 {res.get('unverifiable',0)}")
+        elif res.get("components") is not None:
+            cs = res["components"]
+            job.concl = "组件 " + str(len(cs)) + " 个: " + "、".join(c.get("name", "") for c in cs[:6]) + ("…" if len(cs) > 6 else "")
+        elif res.get("checked") is not None:
+            job.concl = f"检查 {res['checked']} 对象，发现 {len(res.get('findings') or [])} 个可能越权"
+        elif res.get("payload"):
+            job.concl = "反连 payload 已生成（已起监听）"
+        elif res.get("domain"):
+            job.concl = "OAST 域名 " + str(res["domain"])
+        elif res.get("interaction_count") is not None:
+            job.concl = f"OAST 累计回显 {res['interaction_count']} 条"
+        elif res.get("attempts") is not None:
+            job.concl = f"喷洒 {res['attempts']} 次，命中 {len(res.get('confirmed') or [])}"
+        elif job.kind == "agent":
+            tail = [l for l in job.log[-3:] if not l.strip().startswith("<span class=\"t\"/>")]
+            job.concl = "… ".join(l.replace("<br>", " ")[:60] for l in tail[-1:]) or "执行完成（结果已写入资产快照）"
+        elif job.kind == "util" and res.get("note"):
+            job.concl = str(res["note"])[:120]
+    except Exception:
+        job.concl = ""
 
 
 def _run_job(job, params):
@@ -1538,6 +1578,7 @@ def _run_job(job, params):
                 logln(f"√ 写入资产快照：新增 {added['assets_created']} / 更新 {added['assets_updated']}")
             except Exception as e:
                 logln(f"! 快照写入失败：{e}")
+        _set_concl(job)
         job.status = "done"
     except Exception as e:
         job.status = "error"
